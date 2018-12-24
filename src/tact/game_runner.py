@@ -17,25 +17,27 @@ __license__ = "mit"
 
 def launch_game(runner: AbstractGameRunner,
                 agents: List[AbstractAgent],
+                verbose: bool = False,
                 loop: Optional[asyncio.AbstractEventLoop] = None) -> GameStatus:
     """Utility function to run a game with the given locally-defined agents"""
     if loop is None:
         loop = asyncio.get_event_loop()
 
-    return loop.run_until_complete(launch_game_async(runner, agents))
+    return loop.run_until_complete(launch_game_async(runner, agents, verbose))
 
 
 async def launch_game_async(runner: AbstractGameRunner,
-                            agents: List[AbstractAgent]) -> GameStatus:
+                            agents: List[AbstractAgent],
+                            verbose: bool) -> GameStatus:
     for agent in agents:
         await runner.claim_player(agent.player)
 
     await runner.launch()
-    await asyncio.gather(*(_run_agent(runner, agent) for agent in agents))
+    await asyncio.gather(*(_run_agent(runner, agent, verbose) for agent in agents))
     return runner.game.status()
 
 
-async def _run_agent(runner: AbstractGameRunner, agent: AbstractAgent):
+async def _run_agent(runner: AbstractGameRunner, agent: AbstractAgent, verbose: bool):
     if agent.player == 1:
         move = agent.choose_move(runner.game.copy(), opponent_move=None)
         status = await runner.send_move(move)
@@ -51,7 +53,9 @@ async def _run_agent(runner: AbstractGameRunner, agent: AbstractAgent):
         move = agent.choose_move(runner.game.copy(), opponent_move)
         status = await runner.send_move(move)
 
-        # runner.game.dump_board()
+        if verbose:
+            print(f'Player {agent.player} moves {move.coords[0]}, {move.coords[1]}')
+            runner.game.dump_board()
 
         if status != GameStatus.Ongoing:
             return
