@@ -2,6 +2,7 @@ import pytest
 from io import StringIO
 from tact.game_model import GameModel, GameStatus, IllegalMoveException, Move
 
+
 __author__ = "William Bain"
 __copyright__ = "William Bain"
 __license__ = "mit"

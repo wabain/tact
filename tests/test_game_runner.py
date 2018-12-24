@@ -10,8 +10,37 @@ __license__ = "mit"
 
 
 @pytest.mark.asyncio
-async def test_in_memory_game_runner():
+async def test_in_memory_game_runner_claims():
     runner = InMemoryGameRunner(squares=8, target_len=5)
+
+    await runner.claim_player(1)
+
+    with pytest.raises(RuntimeError):
+        await runner.claim_player(1)
+
+    with pytest.raises(RuntimeError):
+        await runner.launch()
+
+    await runner.claim_player(2)
+
+    with pytest.raises(RuntimeError):
+        await runner.send_move(Move(player=1, coords=(0, 0)))
+
+    with pytest.raises(RuntimeError):
+        await runner.opposing_move(player=1)
+
+    await runner.launch()
+
+    with pytest.raises(RuntimeError):
+        await runner.launch()
+
+@pytest.mark.asyncio
+async def test_in_memory_game_runner_sched():
+    runner = InMemoryGameRunner(squares=8, target_len=5)
+
+    await runner.claim_player(1)
+    await runner.claim_player(2)
+    await runner.launch()
 
     t1 = asyncio.create_task(runner.opposing_move(2))
     done, pending = await asyncio.wait([t1], timeout=0)
