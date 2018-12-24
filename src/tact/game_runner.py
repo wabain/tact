@@ -8,15 +8,15 @@ from abc import ABC, abstractmethod
 from typing import Generator, NewType, List, Tuple, Optional
 
 from .game_model import GameModel, GameStatus, Move, Player, get_opponent
-from .agent import BaseAgent
+from .agent import AbstractAgent
 
 __author__ = "William Bain"
 __copyright__ = "William Bain"
 __license__ = "mit"
 
 
-def launch_game(runner: BaseGameRunner,
-                agents: List[BaseAgent],
+def launch_game(runner: AbstractGameRunner,
+                agents: List[AbstractAgent],
                 loop: Optional[asyncio.AbstractEventLoop] = None) -> GameStatus:
     """Utility function to run a game with the given locally-defined agents"""
     if loop is None:
@@ -25,8 +25,8 @@ def launch_game(runner: BaseGameRunner,
     return loop.run_until_complete(launch_game_async(runner, agents))
 
 
-async def launch_game_async(runner: BaseGameRunner,
-                            agents: List[BaseAgent]) -> GameStatus:
+async def launch_game_async(runner: AbstractGameRunner,
+                            agents: List[AbstractAgent]) -> GameStatus:
     for agent in agents:
         await runner.claim_player(agent.player)
 
@@ -35,7 +35,7 @@ async def launch_game_async(runner: BaseGameRunner,
     return runner.game.status()
 
 
-async def _run_agent(runner: BaseGameRunner, agent: BaseAgent):
+async def _run_agent(runner: AbstractGameRunner, agent: AbstractAgent):
     if agent.player == 1:
         move = agent.choose_move(runner.game.copy(), opponent_move=None)
         status = await runner.send_move(move)
@@ -57,8 +57,8 @@ async def _run_agent(runner: BaseGameRunner, agent: BaseAgent):
             return
 
 
-class BaseGameRunner (ABC):
-    """Base class for game runners.
+class AbstractGameRunner (ABC):
+    """Abstract class for game runners.
 
     Subclasses must implement primitives related to negotiating game setup
     as well as functions to perform a new move and to wait on the completion
@@ -87,7 +87,7 @@ class BaseGameRunner (ABC):
         raise NotImplementedError('opposing_move')
 
 
-class InMemoryGameRunner (BaseGameRunner):
+class InMemoryGameRunner (AbstractGameRunner):
     """A simple runner implementation which maintains the game locally."""
     def __init__(self, *, squares: int, target_len: int):
         self._claimed_players = set()

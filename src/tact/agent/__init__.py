@@ -12,7 +12,7 @@ __copyright__ = "William Bain"
 __license__ = "mit"
 
 
-class BaseAgent (ABC):
+class AbstractAgent (ABC):
     """Base class to support agents.
 
     Agents must implement methods to declare what player they represent and

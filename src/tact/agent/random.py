@@ -3,7 +3,7 @@ from __future__ import annotations
 import random
 from typing import Optional
 
-from . import BaseAgent
+from . import AbstractAgent
 from ..game_model import GameModel, Move, Player
 
 
@@ -12,7 +12,7 @@ __copyright__ = "William Bain"
 __license__ = "mit"
 
 
-class RandomAgent (BaseAgent):
+class RandomAgent (AbstractAgent):
     """An agent which picks a random move"""
     def __init__(self, player):
         self._player = player
