@@ -3,27 +3,24 @@
 from __future__ import annotations
 
 import sys
+from enum import Enum
 from typing import Generator, NewType, List, Tuple, Optional
 
 __author__ = "William Bain"
 __copyright__ = "William Bain"
 __license__ = "mit"
 
-# Base types
 Player = NewType('Player', int)
 Board = List[List[Optional[Player]]]
 
-# Game status
-GameStatus = NewType('GameStatus', Optional[Player])
-GameOngoing = GameStatus(None)
-GameDrawn = GameStatus(-1)
+
+class GameStatus (Enum):
+    Drawn = -1
+    Ongoing = 0
+    PlayerOneWins = 1
+    PlayerTwoWins = 2
 
 
-def game_won(player: Player) -> GameStatus:
-    return GameStatus(player)
-
-
-# Core game constructs
 class Move:
     def __init__(self, player: Player, coords: Tuple[int, int]):
         self.player = player
@@ -68,8 +65,8 @@ class GameModel:
 
     def apply_move(self, move: Move):
         status = self.status()
-        if status != GameOngoing:
-            raise IllegalMoveException(move, f'Game is in state {status}')
+        if status != GameStatus.Ongoing:
+            raise IllegalMoveException(move, f'Game is in state {status.name}')
 
         if move.player != self.player:
             raise IllegalMoveException(move, f'Expected player {self.player}')
@@ -85,7 +82,7 @@ class GameModel:
         self.board[x][y] = move.player
         self.player = get_opponent(move.player)
 
-    def status(self):
+    def status(self) -> GameStatus:
         has_potential = False
 
         for run in self._runs():
@@ -96,9 +93,9 @@ class GameModel:
             has_potential = has_potential or self._is_potential_run(run)
 
         if not has_potential:
-            return -1
+            return GameStatus.Drawn
 
-        return GameOngoing
+        return GameStatus.Ongoing
 
     def _run_winner(self, run: Tuple[Optional[Player]]) -> GameStatus:
         assert len(run) >= self.target_len
@@ -108,7 +105,7 @@ class GameModel:
             if start is None:
                 continue
             if all(run[i + j] == start for j in range(1, self.target_len)):
-                return game_won(start)
+                return GameStatus(start)
 
         return None
 

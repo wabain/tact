@@ -1,6 +1,6 @@
 import pytest
 from io import StringIO
-from tact.game_model import GameModel, GameDrawn, IllegalMoveException, Move
+from tact.game_model import GameModel, GameStatus, IllegalMoveException, Move
 
 __author__ = "William Bain"
 __copyright__ = "William Bain"
@@ -53,10 +53,10 @@ def test_game_model_to_draw():
     model.apply_move(Move(player=1, coords=(0, 1)))
     model.apply_move(Move(player=2, coords=(0, 2)))
 
-    assert model.status() == GameDrawn
+    assert model.status() == GameStatus.Drawn
 
     with pytest.raises(IllegalMoveException,
-                       match=f'^Move(.*?): Game is in state {GameDrawn}$'):
+                       match=f'^Move(.*?): Game is in state Drawn$'):
         model.apply_move(Move(player=1, coords=(2, 2)))
 
     with StringIO() as out:
@@ -88,10 +88,10 @@ def test_game_model_to_victory():
 
     model.apply_move(Move(player=1, coords=(2, 0)))
 
-    assert model.status() == 1
+    assert model.status() == GameStatus.PlayerOneWins
 
     with pytest.raises(IllegalMoveException,
-                       match=f'^Move(.*?): Game is in state 1$'):
+                       match=f'^Move(.*?): Game is in state PlayerOneWins$'):
         model.apply_move(Move(player=2, coords=(0, 1)))
 
     with StringIO() as out:

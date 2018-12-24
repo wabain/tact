@@ -1,7 +1,7 @@
 import pytest
 import asyncio
 from io import StringIO
-from tact.game_model import IllegalMoveException, Move, GameOngoing
+from tact.game_model import IllegalMoveException, Move, GameStatus
 from tact.game_runner import InMemoryGameRunner
 
 __author__ = "William Bain"
@@ -20,7 +20,7 @@ async def test_in_memory_game_runner():
 
     initial_move = Move(player=1, coords=(0, 0))
     status = await runner.send_move(initial_move)
-    assert status == GameOngoing
+    assert status == GameStatus.Ongoing
     assert runner.game.board[0][0] == 1
 
     t2 = asyncio.create_task(runner.opposing_move(2))
