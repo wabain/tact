@@ -4,7 +4,7 @@ import random
 from typing import Optional
 
 from . import AbstractAgent
-from ..game_model import GameModel, Move, Player
+from ..game_model import GameModel, Move, Player, get_legal_move_coords
 
 
 __author__ = "William Bain"
@@ -24,13 +24,7 @@ class RandomAgent (AbstractAgent):
     def choose_move(self,
                     game: GameModel,
                     opponent_move: Optional[Move]) -> Move:
-        options = []
-
-        for x in range(game.squares):
-            for y in range(game.squares):
-                if game.board[x][y] is None:
-                    options.append((x, y))
-
+        options = get_legal_move_coords(game)
         assert options, 'Player invoked with no legal moves'
 
         return Move(player=self.player, coords=random.choice(options))

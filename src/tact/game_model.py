@@ -170,5 +170,18 @@ class GameModel:
         )
 
 
+#
+# Utilities
+#
+
 def get_opponent(player: Player) -> Player:
     return Player(2 if player == 1 else 1)
+
+
+def get_legal_move_coords(game: GameModel) -> List[Tuple[int, int]]:
+    coords = []
+    for x in range(game.squares):
+        for y in range(game.squares):
+            if game.board[x][y] is None:
+                coords.append((x, y))
+    return coords
