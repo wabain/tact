@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import sys
 from enum import Enum
-from typing import Generator, NewType, List, Tuple, Optional
+from typing import Iterator, NewType, List, Tuple, Optional
 
 __author__ = "William Bain"
 __copyright__ = "William Bain"
@@ -22,7 +22,7 @@ class GameStatus (Enum):
 
 
 class Move:
-    def __init__(self, player: Player, coords: Tuple[int, int]):
+    def __init__(self, player: Player, coords: Tuple[int, int]) -> None:
         self.player = player
         self.coords = coords
 
@@ -31,7 +31,7 @@ class Move:
 
 
 class IllegalMoveException (Exception):
-    def __init__(self, move: Move, msg: str):
+    def __init__(self, move: Move, msg: str) -> None:
         super().__init__(msg)
         self.move = move
 
@@ -44,11 +44,11 @@ class GameModel:
                  *,
                  squares: int,
                  target_len: int,
-                 player: Optional(Player) = None,
-                 board: Optional(Board) = None):
+                 player: Optional[Player] = None,
+                 board: Optional[Board] = None) -> None:
         self.squares = squares
         self.target_len = target_len
-        self.player = player or 1
+        self.player = player or Player(1)
         self.board = board or [[None] * squares for _ in range(squares)]
 
         if not 0 < target_len <= squares:
@@ -97,7 +97,7 @@ class GameModel:
 
         return GameStatus.Ongoing
 
-    def _run_winner(self, run: Tuple[Optional[Player]]) -> GameStatus:
+    def _run_winner(self, run: Tuple[Optional[Player], ...]) -> Optional[GameStatus]:
         assert len(run) >= self.target_len
 
         for i in range(len(run) - self.target_len + 1):
@@ -109,7 +109,7 @@ class GameModel:
 
         return None
 
-    def _is_potential_run(self, run: Tuple[Optional[Player]]) -> bool:
+    def _is_potential_run(self, run: Tuple[Optional[Player], ...]) -> bool:
         assert len(run) >= self.target_len
 
         for player in (1, 2):
@@ -120,11 +120,11 @@ class GameModel:
         return False
 
 
-    def _runs(self) -> Generator[Tuple[Optional[Player], ...]]:
+    def _runs(self) -> Iterator[Tuple[Optional[Player], ...]]:
         for run_idx in self._run_idxs():
             yield tuple(self.board[x][y] for x, y in run_idx)
 
-    def _run_idxs(self) -> Generator[Tuple[Tuple[int, int]]]:
+    def _run_idxs(self) -> Iterator[Tuple[Tuple[int, int], ...]]:
         for i in range(self.squares):
             yield tuple((i, j) for j in range(self.squares))
 
@@ -171,4 +171,4 @@ class GameModel:
 
 
 def get_opponent(player: Player) -> Player:
-    return 2 if player == 1 else 1
+    return Player(2 if player == 1 else 1)

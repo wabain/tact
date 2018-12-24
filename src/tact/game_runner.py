@@ -5,7 +5,7 @@ from __future__ import annotations
 import sys
 import asyncio
 from abc import ABC, abstractmethod
-from typing import Generator, NewType, List, Tuple, Optional
+from typing import Generator, NewType, List, Set, Tuple, Optional
 
 from .game_model import GameModel, GameStatus, Move, Player, get_opponent
 from .agent import AbstractAgent
@@ -18,7 +18,7 @@ __license__ = "mit"
 def launch_game(runner: AbstractGameRunner,
                 agents: List[AbstractAgent],
                 verbose: bool = False,
-                loop: Optional[asyncio.AbstractEventLoop] = None) -> GameStatus:
+                loop: Optional[asyncio.AbstractEventLoop] = None) -> GameModel:
     """Utility function to run a game with the given locally-defined agents"""
     if loop is None:
         loop = asyncio.get_event_loop()
@@ -28,21 +28,21 @@ def launch_game(runner: AbstractGameRunner,
 
 async def launch_game_async(runner: AbstractGameRunner,
                             agents: List[AbstractAgent],
-                            verbose: bool) -> GameStatus:
+                            verbose: bool) -> GameModel:
     for agent in agents:
         await runner.claim_player(agent.player)
 
     await runner.launch()
     await asyncio.gather(*(_run_agent(runner, agent, verbose) for agent in agents))
-    return runner.game.status()
+    return await runner.game()
 
 
 async def _run_agent(runner: AbstractGameRunner, agent: AbstractAgent, verbose: bool):
     if agent.player == 1:
-        move = agent.choose_move(runner.game.copy(), opponent_move=None)
-        status = await runner.send_move(move)
+        move = agent.choose_move((await runner.game()), opponent_move=None)
+        game = await runner.send_move(move)
 
-        if status != GameStatus.Ongoing:
+        if game.status() != GameStatus.Ongoing:
             return
 
     while True:
@@ -50,14 +50,14 @@ async def _run_agent(runner: AbstractGameRunner, agent: AbstractAgent, verbose: 
         if game.status() != GameStatus.Ongoing:
             break
 
-        move = agent.choose_move(runner.game.copy(), opponent_move)
-        status = await runner.send_move(move)
+        move = agent.choose_move(game, opponent_move)
+        game = await runner.send_move(move)
 
         if verbose:
             print(f'Player {agent.player} moves {move.coords[0]}, {move.coords[1]}')
-            runner.game.dump_board()
+            game.dump_board()
 
-        if status != GameStatus.Ongoing:
+        if game.status() != GameStatus.Ongoing:
             return
 
 
@@ -83,23 +83,27 @@ class AbstractGameRunner (ABC):
         raise NotImplementedError('launch')
 
     @abstractmethod
-    async def send_move(self, move: Move) -> GameStatus:
+    async def send_move(self, move: Move) -> GameModel:
         raise NotImplementedError('send_move')
 
     @abstractmethod
-    async def opposing_move(self) -> (Move, GameModel):
+    async def opposing_move(self, player: Player) -> Tuple[Move, GameModel]:
         raise NotImplementedError('opposing_move')
+
+    @abstractmethod
+    async def game(self) -> GameModel:
+        raise NotImplementedError('game')
 
 
 class InMemoryGameRunner (AbstractGameRunner):
     """A simple runner implementation which maintains the game locally."""
-    def __init__(self, *, squares: int, target_len: int):
-        self._claimed_players = set()
+    def __init__(self, *, squares: int, target_len: int) -> None:
+        self._claimed_players: Set[Player] = set()
         self._launched = False
 
-        self.game = GameModel(squares=squares, target_len=target_len)
-        self._pending = []
-        self.last_move = None
+        self._game = GameModel(squares=squares, target_len=target_len)
+        self._pending: List[Tuple[Player, asyncio.Future[Move]]] = []
+        self._last_move: Optional[Move] = None
 
     async def claim_player(self, player: Player):
         if player in self._claimed_players:
@@ -116,12 +120,11 @@ class InMemoryGameRunner (AbstractGameRunner):
 
         self._launched = True
 
-    async def send_move(self, move: Move) -> GameStatus:
+    async def send_move(self, move: Move) -> GameModel:
         if not self._launched:
             raise RuntimeError('Move requested before game launched')
 
-        self.game.apply_move(move)
-        status = self.game.status()
+        self._game.apply_move(move)
 
         pending = self._pending[:]
         del self._pending[:]
@@ -134,20 +137,23 @@ class InMemoryGameRunner (AbstractGameRunner):
                 )
             future.set_result(move)
 
-        self.last_move = move
+        self._last_move = move
 
-        return status
+        return self._game.copy()
 
-    async def opposing_move(self, player: Player) -> (Move, GameModel):
+    async def opposing_move(self, player: Player) -> Tuple[Move, GameModel]:
         if not self._launched:
             raise RuntimeError('Wait for opposing move requested before game launched')
 
         opponent = get_opponent(player)
 
-        if self.last_move and self.last_move.player == opponent:
-            return self.last_move, self.game.copy()
+        if self._last_move and self._last_move.player == opponent:
+            return self._last_move, self._game.copy()
 
-        future = asyncio.Future()
+        future: asyncio.Future[Move] = asyncio.Future()
         self._pending.append((opponent, future))
         move = await future
-        return move, self.game.copy()
+        return move, self._game.copy()
+
+    async def game(self) -> GameModel:
+        return self._game.copy()

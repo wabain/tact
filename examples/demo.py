@@ -18,7 +18,7 @@ args = parser.parse_args()
 print('Launching a local game using two random agents')
 
 runner = InMemoryGameRunner(squares=args.squares, target_len=args.target_len)
-launch_game(
+game = launch_game(
     runner,
     agents=[
         RandomAgent(player=1),
@@ -28,6 +28,6 @@ launch_game(
 )
 
 if not args.verbose:
-    runner.game.dump_board()
+    game.dump_board()
 
-print('Result:', runner.game.status().name)
+print('Result:', game.status().name)
