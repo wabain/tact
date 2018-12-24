@@ -6,6 +6,7 @@ import argparse
 
 from tact.game_runner import launch_game, InMemoryGameRunner
 from tact.agent.random import RandomAgent
+from tact.agent.alun import AlunAgent
 
 
 parser = argparse.ArgumentParser('demo')
@@ -15,17 +16,16 @@ parser.add_argument('-v', '--verbose', action='store_true')
 
 args = parser.parse_args()
 
-print('Launching a local game using two random agents')
+agents = [
+    AlunAgent(player=1),
+    RandomAgent(player=2),
+]
+
+print('Launching a local game with', type(agents[0]).__name__, 'against',
+      type(agents[1]).__name__)
 
 runner = InMemoryGameRunner(squares=args.squares, target_len=args.target_len)
-game = launch_game(
-    runner,
-    agents=[
-        RandomAgent(player=1),
-        RandomAgent(player=2),
-    ],
-    verbose=args.verbose,
-)
+game = launch_game(runner, agents=agents, verbose=args.verbose)
 
 if not args.verbose:
     game.dump_board()
