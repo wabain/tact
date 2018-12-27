@@ -11,11 +11,8 @@ import enum
 import typing as typ
 from typing import Callable, Tuple
 
-from .import_util import try_server_imports
-
-with try_server_imports():
-    from voluptuous import Schema
-    from voluptuous.validators import Any, Coerce
+from voluptuous import Schema
+from voluptuous.validators import Any, Coerce
 
 
 #

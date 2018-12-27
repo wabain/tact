@@ -18,7 +18,7 @@ from ..game_model import GameModel, Player
 from .server import SessionState, GameState, GameMeta
 
 
-_pool = None
+_pool = None  # pylint: disable=invalid-name
 
 
 _EXPECTED_SESSION_STATES = ('need-join', 'running')
