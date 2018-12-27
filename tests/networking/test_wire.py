@@ -3,7 +3,12 @@ import uuid
 import pytest
 import voluptuous
 
-from tact.server.wire import ServerMsgType, ClientMsgType, ServerMessage, ClientMessage
+from tact.networking.wire import (
+    ServerMsgType,
+    ClientMsgType,
+    ServerMessage,
+    ClientMessage,
+)
 
 
 NONCE = 'f4e720bf-fa19-470e-abb2-a309b49083ab'

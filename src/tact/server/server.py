@@ -6,7 +6,6 @@ handlers but only the ***.
 
 from __future__ import annotations
 
-import os
 import enum
 import json
 import asyncio
@@ -14,16 +13,12 @@ import uuid
 import typing
 from typing import Tuple
 
-from .import_util import try_server_imports
-
-with try_server_imports():
-    from voluptuous import MultipleInvalid
+from voluptuous import MultipleInvalid
 
 from ..game_model import GameModel, Player
-
-from . import wire
+from ..networking import wire
+from ..networking.handlers import HandlerSet, handler
 from . import redis_store
-from .handlers import HandlerSet, handler
 
 
 class SessionState(enum.Enum):
@@ -42,7 +37,7 @@ class GameState(enum.Enum):
     COMPLETED = 'completed'
 
 
-class GameMeta:
+class GameMeta:  # pylint: disable=too-few-public-methods
     """Metadata associated with a server-managed game"""
 
     def __init__(
@@ -104,12 +99,14 @@ class WebsocketConnectionLost(Exception):
 
 
 if typing.TYPE_CHECKING:
+    # pylint: disable=too-few-public-methods
 
     class BaseOnClientMessage(HandlerSet[wire.ClientMsgType]):
         pass
 
 
 else:
+    # pylint: disable=too-few-public-methods
 
     class BaseOnClientMessage(HandlerSet):
         pass
