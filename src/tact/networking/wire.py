@@ -11,8 +11,7 @@ import enum
 import typing as typ
 from typing import Callable, Tuple
 
-from voluptuous import Schema
-from voluptuous.validators import Any, Coerce
+from voluptuous import Schema, ALLOW_EXTRA, All, Any, Coerce
 
 
 #
@@ -26,44 +25,46 @@ def ProtocolVersion(v: typ.Any) -> str:
     return v
 
 
+def part(schema: dict) -> Schema:
+    return Schema(schema, required=True, extra=ALLOW_EXTRA)
+
+
 PlayerID = Any(1, 2)
 
 # Shared messages
 
-illegal_msg_schema = Schema(
-    {'type': 'illegal_msg', 'error': str, 'err_msg_id': Any(int, None)}, required=True
-)
+illegal_msg_schema = Schema({'error': str, 'err_msg_id': Any(int, None)}, required=True)
 
 # Client messages
 
 new_game_schema = Schema(
-    {'type': 'new_game', 'player': PlayerID, 'squares_per_row': int, 'run_to_win': int},
-    required=True,
+    {'player': PlayerID, 'squares_per_row': int, 'run_to_win': int}, required=True
 )
 
-join_game_schema = Schema(
-    {'type': 'join_game', 'game_id': str, 'player': PlayerID}, required=True
-)
+join_game_schema = Schema({'game_id': str, 'player': PlayerID}, required=True)
 
 rejoin_game_schema = Schema(
-    {
-        'type': 'rejoin_game',
-        'game_id': str,
-        'player': PlayerID,
-        'player_nonce': Coerce(uuid.UUID),
-    },
+    {'game_id': str, 'player': PlayerID, 'player_nonce': Coerce(uuid.UUID)},
     required=True,
 )
 
-client_msg_schema = Schema(
-    {
-        'version': ProtocolVersion,
-        'msg_id': int,
-        'msg': Any(
-            illegal_msg_schema, new_game_schema, join_game_schema, rejoin_game_schema
-        ),
-    },
-    required=True,
+client_msg_schema = All(
+    Schema(
+        {
+            'version': ProtocolVersion,
+            'msg_id': int,
+            # 'type': All(str, lambda s: ClientMsgType(s), msg='invalid message type'),
+            'type': str,
+            'msg': dict,
+        },
+        required=True,
+    ),
+    Any(
+        part({'type': 'illegal_msg', 'msg': illegal_msg_schema}),
+        part({'type': 'new_game', 'msg': new_game_schema}),
+        part({'type': 'join_game', 'msg': join_game_schema}),
+        part({'type': 'rejoin_game', 'msg': rejoin_game_schema}),
+    ),
 )
 
 # Server messages
@@ -72,7 +73,9 @@ game_joined_schema = Schema(
     {
         'type': 'game_joined',
         'game_id': str,
-        'player_nonce': lambda nonce: uuid.UUID(nonce),
+        'player_nonce': lambda nonce: uuid.UUID(
+            nonce
+        ),  # pylint: disable=unnecessary-lambda
     }
 )
 
@@ -93,19 +96,23 @@ game_over_schema = Schema(
     required=True,
 )
 
-server_msg_schema = Schema(
-    {
-        'version': ProtocolVersion,
-        'msg_id': int,
-        'msg': Any(
-            illegal_msg_schema,
-            game_joined_schema,
-            move_pending_schema,
-            illegal_move_schema,
-            game_over_schema,
-        ),
-    },
-    required=True,
+
+def is_ok(s):
+    ServerMsgType(s)
+    return s
+
+
+server_msg_schema = All(
+    Schema(
+        {'version': ProtocolVersion, 'msg_id': int, 'type': str, 'msg': dict},
+        required=True,
+    ),
+    Any(
+        part({'type': 'illegal_msg', 'msg': illegal_msg_schema}),
+        part({'type': 'game_joined', 'msg': game_joined_schema}),
+        part({'type': 'illegal_move', 'msg': illegal_move_schema}),
+        part({'type': 'game_over', 'msg': game_over_schema}),
+    ),
 )
 
 
@@ -133,31 +140,43 @@ class ClientMessage:
     @staticmethod
     def parse(msg: typ.Any) -> Tuple[ClientMsgType, dict]:
         msg = client_msg_schema(msg)
-        msg_type = ClientMsgType(msg['msg']['type'])
+        msg_type = ClientMsgType(msg['type'])
         return msg_type, msg['msg']
 
     @staticmethod
-    def build(msg_type: ClientMsgType, msg_id: int, **kwargs) -> dict:
-        payload = dict(type=msg_type.value, **kwargs)
-        return _build_msg(msg_id=msg_id, payload=payload, validate=client_msg_schema)
+    def build(msg_type: ClientMsgType, msg_id: int, **payload) -> dict:
+        return _build_msg(
+            msg_id=msg_id,
+            msg_type=msg_type,
+            payload=payload,
+            validate=client_msg_schema,
+        )
 
 
 class ServerMessage:
     @staticmethod
     def parse(msg: typ.Any) -> Tuple[ServerMsgType, dict]:
         msg = server_msg_schema(msg)
-        msg_type = ServerMsgType(msg['msg']['type'])
+        msg_type = ServerMsgType(msg['type'])
         return msg_type, msg['msg']
 
     @staticmethod
-    def build(msg_type: ServerMsgType, msg_id: int, **kwargs) -> dict:
-        payload = dict(type=msg_type.value, **kwargs)
-        return _build_msg(msg_id=msg_id, payload=payload, validate=server_msg_schema)
+    def build(msg_type: ServerMsgType, msg_id: int, **payload) -> dict:
+        return _build_msg(
+            msg_id=msg_id,
+            msg_type=msg_type,
+            payload=payload,
+            validate=server_msg_schema,
+        )
 
 
 def _build_msg(
-    *, msg_id: int, payload: typ.Any, validate: Callable[[typ.Any], dict]
+    *,
+    msg_id: int,
+    msg_type: typ.Union[ClientMsgType, ServerMsgType],
+    payload: typ.Any,
+    validate: Callable[[typ.Any], dict],
 ) -> dict:
-    msg = {'version': '0.1', 'msg_id': msg_id, 'msg': payload}
+    msg = {'version': '0.1', 'msg_id': msg_id, 'type': msg_type.value, 'msg': payload}
     validate(msg)
     return msg
