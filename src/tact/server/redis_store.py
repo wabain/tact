@@ -149,7 +149,7 @@ def decode_game_meta(*, state: str, nonce_p1: bytes, nonce_p2: bytes) -> GameMet
 
 
 async def get_pool() -> aioredis.Redis:
-    global _pool
+    global _pool  # pylint: disable=invalid-name
 
     if _pool is not None:
         return _pool
