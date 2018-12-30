@@ -13,8 +13,8 @@ from .websocket import AbstractWSManager
 from . import server
 
 
-async def listen(bind: Tuple[str, int]) -> None:
-    manager = LocalWSManager()
+async def listen(bind: Tuple[str, int], redis_store: server.AbstractRedisStore) -> None:
+    manager = LocalWSManager(redis_store=redis_store)
 
     addr, port = bind
     srv = await ws.serve(manager.handle_conn, addr, port)
@@ -22,21 +22,28 @@ async def listen(bind: Tuple[str, int]) -> None:
 
 
 class LocalWSManager(AbstractWSManager):
-    def __init__(self) -> None:
+    def __init__(self, redis_store: server.AbstractRedisStore) -> None:
+        self._redis_store = redis_store
         self._conn_idx = 0
         self._conns: Dict[str, ws.WebSocketServerProtocol] = {}
 
-    async def handle_conn(self, socket: ws.WebSocketServerProtocol, path: str) -> None:
+    async def handle_conn(
+        self,
+        socket: ws.WebSocketServerProtocol,
+        path: str,  # pylint: disable=unused-argument
+    ) -> None:
         # TODO: what to do with path?
 
         conn_id = self._new_conn_id()
         self._conns[conn_id] = socket
 
+        ctx = server.ServerCtx(redis_store=self._redis_store, ws_manager=self)
+
         try:
-            await server.new_connection(conn_id=conn_id)
+            await server.new_connection(ctx=ctx, conn_id=conn_id)
 
             async for msg in socket:
-                await server.new_message(conn_id=conn_id, msg_src=msg, ws_manager=self)
+                await server.new_message(ctx=ctx, conn_id=conn_id, msg_src=msg)
 
             # TODO: server close handler?
         finally:
