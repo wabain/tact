@@ -8,11 +8,11 @@ python: "3.7"
 # `setup.py test`, unfortunately.)
 install:
   - python setup.py develop
-  - pip install tact[ci]
+  - pip install tact[develop,ci]
 
-# TODO: add typechecking
 script:
   - python setup.py test
+  - mypy --ignore-missing-imports src tests
 
 after_success:
   - coveralls
