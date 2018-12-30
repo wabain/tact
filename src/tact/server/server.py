@@ -18,6 +18,7 @@ from voluptuous import MultipleInvalid
 from ..game_model import GameModel, Player
 from ..networking import wire
 from ..networking.handlers import HandlerSet, handler
+from .websocket import AbstractWSManager
 from . import redis_store
 
 
@@ -54,7 +55,9 @@ async def new_connection(conn_id: str) -> None:
     await redis_store.put_session(conn_id, SessionState.NEED_JOIN)
 
 
-async def new_message(conn_id: str, msg_src: str, ws_manager) -> None:
+async def new_message(
+    conn_id: str, msg_src: str, ws_manager: AbstractWSManager
+) -> None:
     try:
         msg = json.loads(msg_src)
     except ValueError:
@@ -100,14 +103,12 @@ class WebsocketConnectionLost(Exception):
 
 if typing.TYPE_CHECKING:
     # pylint: disable=too-few-public-methods
-
     class BaseOnClientMessage(HandlerSet[wire.ClientMsgType]):
         pass
 
 
 else:
     # pylint: disable=too-few-public-methods
-
     class BaseOnClientMessage(HandlerSet):
         pass
 
@@ -115,14 +116,14 @@ else:
 class OnClientMessage(BaseOnClientMessage):
     @handler(wire.ClientMsgType.ILLEGAL_MSG)
     @staticmethod
-    async def on_illegal_msg(conn_id, payload, ws_manager):
+    async def on_illegal_msg(conn_id, payload, ws_manager: AbstractWSManager):
         await asyncio.gather(
             redis_store.delete_session(conn_id), ws_manager.close(conn_id)
         )
 
     @handler(wire.ClientMsgType.NEW_GAME)
     @staticmethod
-    async def on_new_game(conn_id, payload, ws_manager):
+    async def on_new_game(conn_id, payload, ws_manager: AbstractWSManager):
         player = payload['player']
         squares = payload['squares_per_row']
         target_len = payload['run_to_win']
@@ -160,7 +161,8 @@ class OnClientMessage(BaseOnClientMessage):
             )
         except WebsocketConnectionLost:
             await asyncio.gather(
-                redis_store.delete_game(game_key), redis_store.delete_session(conn_id)
+                redis_store.delete_game(game_key.bytes),
+                redis_store.delete_session(conn_id),
             )
 
     @handler(wire.ClientMsgType.JOIN_GAME)

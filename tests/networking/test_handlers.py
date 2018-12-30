@@ -1,9 +1,6 @@
 # pylint: disable=invalid-name
 
-import uuid
-
 import pytest
-import voluptuous
 
 from tact.networking.handlers import (
     handler,
@@ -46,8 +43,9 @@ def test_delegated_handler_set():
             return self.n + a + 2
 
     delegate = Delegate(n=50)
+    dispatch_table = build_dispatch_table(delegate)  # pylint: disable=unused-variable
 
-    class H(HandlerSet, handlers=build_dispatch_table(delegate)):
+    class H(HandlerSet, handlers=dispatch_table):
         pass
 
     assert H.dispatch(1, 1) == 52, 'static delegated handler set'

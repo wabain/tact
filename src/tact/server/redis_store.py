@@ -7,14 +7,14 @@ import os
 import enum
 import json
 import uuid
-from typing import Dict, List, Tuple, Optional
+from typing import Tuple, Optional
 
 from .import_util import try_server_imports
 
 with try_server_imports():
     import aioredis
 
-from ..game_model import GameModel, Player
+from ..game_model import GameModel
 from .server import SessionState, GameState, GameMeta
 
 
@@ -149,7 +149,7 @@ def decode_game_meta(*, state: str, nonce_p1: bytes, nonce_p2: bytes) -> GameMet
 
 
 async def get_pool() -> aioredis.Redis:
-    global _pool  # pylint: disable=invalid-name
+    global _pool  # pylint: disable=invalid-name,global-statement
 
     if _pool is not None:
         return _pool
