@@ -1,0 +1,5 @@
+version: '3'
+services:
+  unit-test:
+    build: .
+    command: python setup.py test

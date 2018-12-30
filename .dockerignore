@@ -1,0 +1,72 @@
+#
+# Keep in sync with .gitignore
+#
+
+.git
+.vscode
+.dockerignore
+.gitignore
+docker-compose.yml
+Dockerfile
+
+*.env
+*.md
+
+#XXX
+tact_env
+
+# GITIGNORE START
+# Temporary and binary files
+**/*~
+**/*.py[cod]
+**/*.so
+**/*.cfg
+!.isort.cfg
+!setup.cfg
+**/*.orig
+**/*.log
+**/*.pot
+**/__pycache__
+**/.cache
+**/.*.swp
+**/.ipynb_checkpoints
+**/.mypy_cache
+
+# Project files
+**/.ropeproject
+**/.project
+**/.pydevproject
+**/.settings
+**/.idea
+**/tags
+
+# Package files
+**/*.egg
+**/*.eggs
+**/.installed.cfg
+**/*.egg-info
+
+# Unittest and coverage
+**/htmlcov
+**/.coverage
+**/.tox
+**/junit.xml
+**/coverage.xml
+**/.pytest_cache
+
+# Build and docs folder/files
+**/build
+**/dist
+**/sdist
+**/docs/api
+**/docs/_rst
+**/docs/_build
+**/cover
+**/MANIFEST
+
+# Per-project virtualenvs
+**/.venv*
+
+# OS stuff
+**/.DS_Store
+# GITIGNORE END
