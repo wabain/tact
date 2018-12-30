@@ -7,3 +7,5 @@ disable =
     missing-docstring,
     # handled by black
     format,
+    # given to false positives (e.g. multiline subclass method declarations)
+    duplicate-code
