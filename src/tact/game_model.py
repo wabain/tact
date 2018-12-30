@@ -14,14 +14,14 @@ Player = NewType('Player', int)
 Board = List[List[Optional[Player]]]
 
 
-class GameStatus (Enum):
+class GameStatus(Enum):
     Drawn = -1
     Ongoing = 0
     PlayerOneWins = 1
     PlayerTwoWins = 2
 
 
-class Move:
+class Move:  # pylint: disable=too-few-public-methods
     def __init__(self, player: Player, coords: Tuple[int, int]) -> None:
         self.player = player
         self.coords = coords
@@ -30,7 +30,7 @@ class Move:
         return f'{type(self).__name__}(player={self.player}, coords={self.coords})'
 
 
-class IllegalMoveException (Exception):
+class IllegalMoveException(Exception):
     def __init__(self, move: Move, msg: str) -> None:
         super().__init__(msg)
         self.move = move
@@ -40,12 +40,14 @@ class IllegalMoveException (Exception):
 
 
 class GameModel:
-    def __init__(self,
-                 *,
-                 squares: int,
-                 target_len: int,
-                 player: Optional[Player] = None,
-                 board: Optional[Board] = None) -> None:
+    def __init__(
+        self,
+        *,
+        squares: int,
+        target_len: int,
+        player: Optional[Player] = None,
+        board: Optional[Board] = None,
+    ) -> None:
         self.squares = squares
         self.target_len = target_len
         self.player = player or Player(1)
@@ -58,10 +60,12 @@ class GameModel:
             raise ValueError('incorrect board dimensions')
 
     def copy(self) -> GameModel:
-        return GameModel(squares=self.squares,
-                         target_len=self.target_len,
-                         player=self.player,
-                         board=[list(r) for r in self.board])
+        return GameModel(
+            squares=self.squares,
+            target_len=self.target_len,
+            player=self.player,
+            board=[list(r) for r in self.board],
+        )
 
     def apply_move(self, move: Move):
         status = self.status()
@@ -76,7 +80,7 @@ class GameModel:
         if not all(0 <= c < self.squares for c in move.coords):
             raise IllegalMoveException(move, 'Coordinates out of bounds')
 
-        if self.board[x][y] != None:
+        if self.board[x][y] is not None:
             raise IllegalMoveException(move, 'Square is already occupied')
 
         self.board[x][y] = move.player
@@ -119,7 +123,6 @@ class GameModel:
 
         return False
 
-
     def _runs(self) -> Iterator[Tuple[Optional[Player], ...]]:
         for run_idx in self._run_idxs():
             yield tuple(self.board[x][y] for x, y in run_idx)
@@ -149,8 +152,8 @@ class GameModel:
         for i in range(len(self.board)):
             print(end='|', file=out)
             for col in self.board:
-                sq = col[i]
-                char = 'X' if sq == 1 else 'O' if sq == 2 else ' '
+                square = col[i]
+                char = 'X' if square == 1 else 'O' if square == 2 else ' '
                 print(f' {char} |', end='', file=out)
             print(file=out)
             self._print_sep(out)
@@ -163,16 +166,17 @@ class GameModel:
             return False
 
         return (
-            self.squares == other.squares and
-            self.target_len == other.target_len and
-            self.player == other.player and
-            self.board == other.board
+            self.squares == other.squares
+            and self.target_len == other.target_len
+            and self.player == other.player
+            and self.board == other.board
         )
 
 
 #
 # Utilities
 #
+
 
 def get_opponent(player: Player) -> Player:
     return Player(2 if player == 1 else 1)

@@ -1,0 +1,23 @@
+sudo: required
+dist: xenial  # Ubuntu 16.04
+language: python
+python: "3.7"
+
+# Set up package in development mode, then install CI extras to make them
+# invocable via the CLI. (Note that these get installed anyway as part of
+# `setup.py test`, unfortunately.)
+#
+# FIXME: We need to fully install testing dependencies so that pylint knows
+# how to resolve pytest, but this is at least theoretically a bit ugly.
+install:
+  - python setup.py develop
+  - pip install tact[develop,testing,ci]
+
+script:
+  - python setup.py test
+  - black --diff --check setup.py src tests
+  - pylint setup.py tact tests/*
+  - mypy --ignore-missing-imports src tests
+
+after_success:
+  - coveralls

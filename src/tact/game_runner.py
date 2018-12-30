@@ -2,10 +2,9 @@
 
 from __future__ import annotations
 
-import sys
 import asyncio
 from abc import ABC, abstractmethod
-from typing import Generator, NewType, List, Set, Tuple, Optional
+from typing import List, Set, Tuple, Optional
 
 from .game_model import GameModel, GameStatus, Move, Player, get_opponent
 from .agent import AbstractAgent
@@ -15,10 +14,12 @@ __copyright__ = "William Bain"
 __license__ = "mit"
 
 
-def launch_game(runner: AbstractGameRunner,
-                agents: List[AbstractAgent],
-                verbose: bool = False,
-                loop: Optional[asyncio.AbstractEventLoop] = None) -> GameModel:
+def launch_game(
+    runner: AbstractGameRunner,
+    agents: List[AbstractAgent],
+    verbose: bool = False,
+    loop: Optional[asyncio.AbstractEventLoop] = None,
+) -> GameModel:
     """Utility function to run a game with the given locally-defined agents"""
     if loop is None:
         loop = asyncio.get_event_loop()
@@ -26,9 +27,9 @@ def launch_game(runner: AbstractGameRunner,
     return loop.run_until_complete(launch_game_async(runner, agents, verbose))
 
 
-async def launch_game_async(runner: AbstractGameRunner,
-                            agents: List[AbstractAgent],
-                            verbose: bool) -> GameModel:
+async def launch_game_async(
+    runner: AbstractGameRunner, agents: List[AbstractAgent], verbose: bool
+) -> GameModel:
     for agent in agents:
         await runner.claim_player(agent.player)
 
@@ -61,13 +62,14 @@ async def _run_agent(runner: AbstractGameRunner, agent: AbstractAgent, verbose: 
             return
 
 
-class AbstractGameRunner (ABC):
+class AbstractGameRunner(ABC):
     """Abstract class for game runners.
 
     Subclasses must implement primitives related to negotiating game setup
     as well as functions to perform a new move and to wait on the completion
     of the opponent's move.
     """
+
     @abstractmethod
     async def claim_player(self, player: Player):
         """Add locally defined agents to handle interactions for a given player"""
@@ -95,8 +97,9 @@ class AbstractGameRunner (ABC):
         raise NotImplementedError('game')
 
 
-class InMemoryGameRunner (AbstractGameRunner):
+class InMemoryGameRunner(AbstractGameRunner):
     """A simple runner implementation which maintains the game locally."""
+
     def __init__(self, *, squares: int, target_len: int) -> None:
         self._claimed_players: Set[Player] = set()
         self._launched = False
@@ -113,7 +116,9 @@ class InMemoryGameRunner (AbstractGameRunner):
 
     async def launch(self):
         if self._claimed_players != {1, 2}:
-            raise RuntimeError('Cannot launch in-memory game without all players claimed')
+            raise RuntimeError(
+                'Cannot launch in-memory game without all players claimed'
+            )
 
         if self._launched:
             raise RuntimeError('Game already launched')
@@ -133,7 +138,7 @@ class InMemoryGameRunner (AbstractGameRunner):
             if expected_player != move.player:
                 raise RuntimeError(
                     f'pending move player expected {expected_player}, but a '
-                    f'legal move by {move.player} was received',
+                    f'legal move by {move.player} was received'
                 )
             future.set_result(move)
 
