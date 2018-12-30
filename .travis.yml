@@ -1,0 +1,18 @@
+sudo: required
+dist: xenial  # Ubuntu 16.04
+language: python
+python: "3.7"
+
+# Set up package in development mode, then install CI extras to make them
+# invocable via the CLI. (Note that these get installed anyway as part of
+# `setup.py test`, unfortunately.)
+install:
+  - python setup.py develop
+  - pip install tact[ci]
+
+# TODO: add typechecking
+script:
+  - python setup.py test
+
+after_success:
+  - coveralls
