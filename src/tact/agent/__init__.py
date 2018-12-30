@@ -12,20 +12,19 @@ __copyright__ = "William Bain"
 __license__ = "mit"
 
 
-class AbstractAgent (ABC):
+class AbstractAgent(ABC):
     """Base class to support agents.
 
     Agents must implement methods to declare what player they represent and
     to choose moves.
     """
+
     @property
     @abstractmethod
     def player(self):
         raise NotImplementedError('player')
 
-    def choose_move(self,
-                    game: GameModel,
-                    opponent_move: Optional[Move]) -> Move:
+    def choose_move(self, game: GameModel, opponent_move: Optional[Move]) -> Move:
         """Make a new move.
 
         The caller is supplied with the current state of the game as well as

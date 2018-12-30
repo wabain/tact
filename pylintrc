@@ -5,4 +5,5 @@ good-names = i,j,x,y
 disable =
     fixme,
     missing-docstring,
+    # handled by black
     format,

@@ -26,16 +26,17 @@ def test_game_model_apply_move():
     assert model.player == 2
     assert model.board[0][0] == 1
 
-    with pytest.raises(IllegalMoveException,
-                       match='^Move(.*?): Expected player 2$'):
+    with pytest.raises(IllegalMoveException, match='^Move(.*?): Expected player 2$'):
         model.apply_move(Move(player=1, coords=(0, 1)))
 
-    with pytest.raises(IllegalMoveException,
-                       match='^Move(.*?): Coordinates out of bounds$'):
+    with pytest.raises(
+        IllegalMoveException, match='^Move(.*?): Coordinates out of bounds$'
+    ):
         model.apply_move(Move(player=2, coords=(-1, 0)))
 
-    with pytest.raises(IllegalMoveException,
-                       match='^Move(.*?): Square is already occupied$'):
+    with pytest.raises(
+        IllegalMoveException, match='^Move(.*?): Square is already occupied$'
+    ):
         model.apply_move(Move(player=2, coords=(0, 0)))
 
 
@@ -56,8 +57,9 @@ def test_game_model_to_draw():
 
     assert model.status() == GameStatus.Drawn
 
-    with pytest.raises(IllegalMoveException,
-                       match=f'^Move(.*?): Game is in state Drawn$'):
+    with pytest.raises(
+        IllegalMoveException, match=f'^Move(.*?): Game is in state Drawn$'
+    ):
         model.apply_move(Move(player=1, coords=(2, 2)))
 
     with StringIO() as out:
@@ -91,8 +93,9 @@ def test_game_model_to_victory():
 
     assert model.status() == GameStatus.PlayerOneWins
 
-    with pytest.raises(IllegalMoveException,
-                       match=f'^Move(.*?): Game is in state PlayerOneWins$'):
+    with pytest.raises(
+        IllegalMoveException, match=f'^Move(.*?): Game is in state PlayerOneWins$'
+    ):
         model.apply_move(Move(player=2, coords=(0, 1)))
 
     with StringIO() as out:

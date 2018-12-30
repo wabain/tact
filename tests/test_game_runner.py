@@ -33,6 +33,7 @@ async def test_in_memory_game_runner_claims():
     with pytest.raises(RuntimeError):
         await runner.launch()
 
+
 @pytest.mark.asyncio
 async def test_in_memory_game_runner_sched():
     runner = InMemoryGameRunner(squares=8, target_len=5)
@@ -53,8 +54,10 @@ async def test_in_memory_game_runner_sched():
 
     task2 = asyncio.create_task(runner.opposing_move(2))
     done, pending = await asyncio.wait([task1, task2], timeout=0)
-    assert done == {task1, task2}, \
-        'Resolves all opposing_move awaits after opponent plays'
+    assert done == {
+        task1,
+        task2,
+    }, 'Resolves all opposing_move awaits after opponent plays'
     assert pending == set()
 
     assert task1.result() == (initial_move, game)

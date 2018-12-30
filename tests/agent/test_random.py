@@ -12,8 +12,4 @@ def test_random_run():
     # TODO: set a seed
 
     runner = InMemoryGameRunner(squares=8, target_len=5)
-    launch_game(runner, agents=[
-        RandomAgent(player=1),
-        RandomAgent(player=2),
-    ])
-
+    launch_game(runner, agents=[RandomAgent(player=1), RandomAgent(player=2)])

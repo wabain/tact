@@ -15,6 +15,7 @@ install:
 
 script:
   - python setup.py test
+  - black --diff --check setup.py src tests
   - pylint setup.py tact tests/*
   - mypy --ignore-missing-imports src tests
 

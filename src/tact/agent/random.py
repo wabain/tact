@@ -12,8 +12,9 @@ __copyright__ = "William Bain"
 __license__ = "mit"
 
 
-class RandomAgent (AbstractAgent):
+class RandomAgent(AbstractAgent):
     """An agent which picks a random move"""
+
     def __init__(self, player):
         self._player = player
 
@@ -21,9 +22,7 @@ class RandomAgent (AbstractAgent):
     def player(self) -> Player:
         return self._player
 
-    def choose_move(self,
-                    game: GameModel,
-                    opponent_move: Optional[Move]) -> Move:
+    def choose_move(self, game: GameModel, opponent_move: Optional[Move]) -> Move:
         options = get_legal_move_coords(game)
         assert options, 'Player invoked with no legal moves'
 
