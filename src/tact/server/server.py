@@ -11,7 +11,7 @@ import json
 import asyncio
 import uuid
 import typing
-from typing import Tuple, Optional
+from typing import Any, List, Tuple, Optional
 from abc import ABC, abstractmethod
 
 from voluptuous import MultipleInvalid
@@ -102,15 +102,31 @@ async def new_message(ctx: ServerCtx, conn_id: str, msg_src: str) -> None:
                 wire.ServerMsgType.ILLEGAL_MSG,
                 msg_id=0,  # TODO
                 err_msg_id=err_msg_id,
-                error=str(exc),
+                error=format_validation_error(exc),
             ),
         )
 
         return
 
-    typing.cast(
-        HandlerSet[wire.ClientMsgType],
-        OnClientMessage.dispatch(msg_type, ctx=ctx, conn_id=conn_id, payload=payload),
+    await OnClientMessage.dispatch(msg_type, ctx=ctx, conn_id=conn_id, payload=payload)
+
+
+def format_validation_error(exc: MultipleInvalid) -> str:
+    paths = [error.path for error in exc.errors]
+
+    # Hack: if the message type is invalid, voluptuous may spill out
+    # additional errors from the msg payload that it gathered while
+    # trying to validate the type/payload combination; filter those out.
+    if ['type'] in paths:
+        paths = [p for p in paths if not p or p[0] != 'msg']
+
+    formatted = [format_validation_error_path(path) for path in paths]
+    return 'invalid input at ' + ', '.join(formatted)
+
+
+def format_validation_error_path(path: List[Any]):
+    return 'message' + ''.join(
+        '.' + p if isinstance(p, str) else f'[{p!r}]' for p in path
     )
 
 
@@ -118,7 +134,7 @@ async def new_message(ctx: ServerCtx, conn_id: str, msg_src: str) -> None:
 # MESSAGE HANDLER FUNCTIONS
 #
 
-if typing.TYPE_CHECKING:
+if typing.TYPE_CHECKING:  # pragma: no cover
     # pylint: disable=too-few-public-methods
     class BaseOnClientMessage(HandlerSet[wire.ClientMsgType]):
         pass
@@ -177,7 +193,7 @@ class OnClientMessage(BaseOnClientMessage):
                     wire.ServerMsgType.GAME_JOINED,
                     msg_id=0,  # TODO
                     game_id=str(game_key),  # TODO
-                    player_nonce=meta.get_player_nonce(player),
+                    player_nonce=str(meta.get_player_nonce(player)),
                 ),
             )
         except WebsocketConnectionLost:
