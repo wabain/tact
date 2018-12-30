@@ -1,0 +1,8 @@
+[MESSAGES CONTROL]
+
+good-names = i,j,x,y
+
+disable =
+    fixme,
+    missing-docstring,
+    format,

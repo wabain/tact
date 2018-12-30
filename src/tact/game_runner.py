@@ -2,10 +2,9 @@
 
 from __future__ import annotations
 
-import sys
 import asyncio
 from abc import ABC, abstractmethod
-from typing import Generator, NewType, List, Set, Tuple, Optional
+from typing import List, Set, Tuple, Optional
 
 from .game_model import GameModel, GameStatus, Move, Player, get_opponent
 from .agent import AbstractAgent

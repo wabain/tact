@@ -21,7 +21,7 @@ class GameStatus (Enum):
     PlayerTwoWins = 2
 
 
-class Move:
+class Move:  # pylint: disable=too-few-public-methods
     def __init__(self, player: Player, coords: Tuple[int, int]) -> None:
         self.player = player
         self.coords = coords
@@ -76,7 +76,7 @@ class GameModel:
         if not all(0 <= c < self.squares for c in move.coords):
             raise IllegalMoveException(move, 'Coordinates out of bounds')
 
-        if self.board[x][y] != None:
+        if self.board[x][y] is not None:
             raise IllegalMoveException(move, 'Square is already occupied')
 
         self.board[x][y] = move.player
@@ -149,8 +149,8 @@ class GameModel:
         for i in range(len(self.board)):
             print(end='|', file=out)
             for col in self.board:
-                sq = col[i]
-                char = 'X' if sq == 1 else 'O' if sq == 2 else ' '
+                square = col[i]
+                char = 'X' if square == 1 else 'O' if square == 2 else ' '
                 print(f' {char} |', end='', file=out)
             print(file=out)
             self._print_sep(out)

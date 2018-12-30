@@ -1,5 +1,5 @@
-import pytest
 from io import StringIO
+import pytest
 from tact.game_model import GameModel, GameStatus, IllegalMoveException, Move
 
 

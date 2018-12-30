@@ -1,6 +1,3 @@
-import random
-import pytest
-
 from tact.game_runner import launch_game, InMemoryGameRunner
 from tact.agent.random import RandomAgent
 
