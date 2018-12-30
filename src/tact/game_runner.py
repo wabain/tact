@@ -71,12 +71,12 @@ class AbstractGameRunner(ABC):
     """
 
     @abstractmethod
-    async def claim_player(self, player: Player):
+    async def claim_player(self, player: Player) -> None:
         """Add locally defined agents to handle interactions for a given player"""
         raise NotImplementedError('add_agent')
 
     @abstractmethod
-    async def launch(self):
+    async def launch(self) -> None:
         """Launch the game with the currently defined agents.
 
         The game runner is responsible for determining that the agents
@@ -108,13 +108,13 @@ class InMemoryGameRunner(AbstractGameRunner):
         self._pending: List[Tuple[Player, asyncio.Future[Move]]] = []
         self._last_move: Optional[Move] = None
 
-    async def claim_player(self, player: Player):
+    async def claim_player(self, player: Player) -> None:
         if player in self._claimed_players:
             raise RuntimeError(f'Duplicate claims for player {player}')
 
         self._claimed_players.add(player)
 
-    async def launch(self):
+    async def launch(self) -> None:
         if self._claimed_players != {1, 2}:
             raise RuntimeError(
                 'Cannot launch in-memory game without all players claimed'
