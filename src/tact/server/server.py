@@ -70,10 +70,12 @@ class ServerCtx:  # pylint: disable=too-few-public-methods
 
 
 async def new_connection(ctx: ServerCtx, conn_id: str) -> None:
+    print('new connection:', conn_id)
     await ctx.redis_store.put_session(conn_id, SessionState.NEED_JOIN)
 
 
 async def new_message(ctx: ServerCtx, conn_id: str, msg_src: str) -> None:
+    print('new message:', conn_id, msg_src)
     try:
         msg = json.loads(msg_src)
     except ValueError:
@@ -180,13 +182,16 @@ class OnClientMessage(BaseOnClientMessage):
             # join_conns=(conn_id, None) if player == 1 else (None, conn_id),
         )
 
+        print('write to redis...')
         # TODO: validate state transitions?
         game_key, _ = await asyncio.gather(
             ctx.redis_store.put_game(game=game, meta=meta),
             ctx.redis_store.put_session(conn_id, SessionState.RUNNING),
         )
+        print('...done')
 
         try:
+            print('write to socket...')
             await ctx.ws_manager.send(
                 conn_id,
                 json.dumps(
@@ -201,6 +206,7 @@ class OnClientMessage(BaseOnClientMessage):
                     )
                 ),
             )
+            print('...done')
         except WebsocketConnectionLost:
             await asyncio.gather(
                 ctx.redis_store.delete_game(game_key.bytes),
