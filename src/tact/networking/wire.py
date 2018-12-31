@@ -73,9 +73,12 @@ game_joined_schema = Schema(
     {
         'type': 'game_joined',
         'game_id': str,
-        'player_nonce': lambda nonce: uuid.UUID(
-            nonce
-        ),  # pylint: disable=unnecessary-lambda
+        'player': int,
+        'player_nonce': lambda nonce: (  # pylint: disable=unnecessary-lambda
+            uuid.UUID(nonce)
+        ),
+        'squares_per_row': int,
+        'run_to_win': int,
     }
 )
 

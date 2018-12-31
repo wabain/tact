@@ -157,7 +157,13 @@ async def test_client_message_new_game(player: Player):
             'version': '0.1',
             'msg_id': 0,
             'type': 'game_joined',
-            'msg': {'game_id': MOCK_GAME_ID, 'player_nonce': str(player_nonce)},
+            'msg': {
+                'player': player,
+                'squares_per_row': 8,
+                'run_to_win': 5,
+                'game_id': MOCK_GAME_ID,
+                'player_nonce': str(player_nonce),
+            },
         },
     )
 
