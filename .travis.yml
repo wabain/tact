@@ -11,13 +11,19 @@ python: "3.7"
 # how to resolve pytest, but this is at least theoretically a bit ugly.
 install:
   - python setup.py develop
-  - pip install tact[develop,testing,ci]
+  - pip install tact[server,develop,testing,ci]
+
+before_script:
+  - docker-compose up --detach redis
 
 script:
   - python setup.py test
   - black --diff --check setup.py src tests
   - pylint setup.py tact tests/*
   - mypy --ignore-missing-imports src tests
+
+after_script:
+  - docker-compose down
 
 after_success:
   - coveralls
