@@ -17,9 +17,6 @@ from ..game_model import GameModel, Player
 from .server import SessionState, GameState, GameMeta, AbstractRedisStore
 
 
-_pool = None  # pylint: disable=invalid-name
-
-
 _EXPECTED_SESSION_STATES = ('need-join', 'running')
 
 _EXPECTED_GAME_STATES = (
@@ -39,7 +36,7 @@ class RedisStore(AbstractRedisStore):
         if self._pool is not None:
             return self._pool
 
-        self._pool = await aioredis.create_pool(self._url)
+        self._pool = await aioredis.create_redis_pool(self._url)
         return self._pool
 
     async def put_session(self, conn_id: str, state: SessionState) -> None:
@@ -55,7 +52,15 @@ class RedisStore(AbstractRedisStore):
     async def read_session(self, conn_id: str) -> SessionState:
         """Read the state of a session from Redis"""
         redis = await self.get_pool()
-        state = await redis.hget(_conn_id_to_redis_key(conn_id), 'state')
+        state: Optional[str] = await redis.hget(
+            _conn_id_to_redis_key(conn_id), 'state', encoding='utf-8'
+        )
+
+        # TODO: If there are real scenarios where this could happen
+        # it would be better to let the caller handle it
+        if state is None:
+            raise LookupError(f'Failed to find connection {conn_id}')
+
         return SessionState(state)
 
     async def delete_session(self, conn_id: str) -> None:
@@ -68,10 +73,11 @@ class RedisStore(AbstractRedisStore):
         redis = await self.get_pool()
         key = uuid.uuid4()
 
+        fields = encode_game_meta(meta)
+        fields.update(encode_game_fields(game))
+
         # TODO: set a game expiry?
-        await redis.hmset_dict(
-            key.bytes, encode_game_meta(meta), encode_game_fields(game)
-        )
+        await redis.hmset_dict(key.bytes, fields)
 
         return key
 
@@ -93,9 +99,23 @@ class RedisStore(AbstractRedisStore):
     async def read_game(self, key: bytes) -> Tuple[GameState, GameModel]:
         """Read the state of the game with the given key"""
         redis = await self.get_pool()
-        state, squares, target_len, player, board = await redis.hmget(
-            key, 'state', 'gm_squares', 'gm_target_len', 'gm_player', 'gm_board'
+        out = await redis.hmget(
+            key,
+            'state',
+            'gm_squares',
+            'gm_target_len',
+            'gm_player',
+            'gm_board',
+            encoding='utf-8',
         )
+
+        if any(v is None for v in out):
+            raise LookupError(
+                f'Failed to read desired keys for game {uuid.UUID(bytes=key)}'
+            )
+
+        state, squares, target_len, player, board = out
+
         game_state = GameState(state)
         game = decode_game_fields(
             squares=squares, target_len=target_len, player=player, board=board
