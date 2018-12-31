@@ -76,10 +76,10 @@ async def test_client_message_invalid_type():
 async def test_client_message_invalid_msg_id():
     ctx = mock_server_ctx()
 
-    # Message type doesn't matter much here; voluptous will bail before doing
+    # Message payload doesn't matter much here; voluptous will bail before doing
     # that validation
     msg = json.dumps(
-        {'version': '0.1', 'msg_id': 'cats', 'type': 'somersault', 'msg': {}}
+        {'version': '0.1', 'msg_id': 'cats', 'type': 'new_game', 'msg': {}}
     )
     await server.new_message(ctx, 'foo', msg)
 
