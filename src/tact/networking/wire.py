@@ -4,6 +4,9 @@ This module actually implements fairly high-level functionality; it handles
 translated JSON payloads to and from an internal representation.
 """
 
+# Voluptuous has slightly weird naming conventions, but I'll stick with them
+# pylint: disable=invalid-name
+
 from __future__ import annotations
 
 import uuid
