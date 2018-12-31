@@ -29,7 +29,9 @@ class NetworkedGameRunner(AbstractGameRunner):
 
         # TODO: need to be able to join remotely initiated game
         if not self._connections:
-            await conn.new_game(player)
+            await conn.new_game(
+                player, squares=self.squares, target_len=self.target_len
+            )
             self._initializing_player = player
         else:
             assert self._initializing_player is not None

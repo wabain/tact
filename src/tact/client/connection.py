@@ -35,11 +35,15 @@ class ClientConnection:
         self._nonce: Optional[str] = None
         self._game_id: Optional[str] = None
 
-    async def new_game(self, player: Player) -> None:
+    async def new_game(self, player: Player, squares: int, target_len: int) -> None:
         self._chkstate(ConnState.INIT)
 
         msg = ClientMessage.build(
-            ClientMsgType.NEW_GAME, msg_id=self._new_msg(), player=player
+            ClientMsgType.NEW_GAME,
+            msg_id=self._new_msg(),
+            player=player,
+            squares_per_row=squares,
+            run_to_win=target_len,
         )
 
         self._state = ConnState.JOIN_PENDING
