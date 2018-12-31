@@ -1,6 +1,7 @@
 # pylint: disable=redefined-outer-name
 
 import uuid
+import asyncio
 
 import pytest
 
@@ -10,11 +11,22 @@ from tact.server.redis_store import RedisStore
 
 
 URL = 'redis://localhost'
+TEST_DB_NUMBER = 1
+
+
+@pytest.fixture(scope='module')
+def redis_test_db_init():
+    async def clear_test_db():
+        redis_store = RedisStore(URL, db=TEST_DB_NUMBER)
+        pool = await redis_store.get_pool()
+        await clear_store(pool)
+
+    asyncio.run(clear_test_db())
 
 
 @pytest.fixture
-async def store():
-    redis_store = RedisStore('redis://localhost')
+async def store(redis_test_db_init):  # pylint: disable=unused-argument
+    redis_store = RedisStore(URL, db=TEST_DB_NUMBER)
     yield redis_store
 
     pool = await redis_store.get_pool()
