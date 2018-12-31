@@ -189,11 +189,16 @@ class OnClientMessage(BaseOnClientMessage):
         try:
             await ctx.ws_manager.send(
                 conn_id,
-                wire.ServerMessage.build(
-                    wire.ServerMsgType.GAME_JOINED,
-                    msg_id=0,  # TODO
-                    game_id=str(game_key),  # TODO
-                    player_nonce=str(meta.get_player_nonce(player)),
+                json.dumps(
+                    wire.ServerMessage.build(
+                        wire.ServerMsgType.GAME_JOINED,
+                        msg_id=0,  # TODO
+                        player=player,
+                        squares_per_row=squares,
+                        run_to_win=target_len,
+                        game_id=str(game_key),  # TODO
+                        player_nonce=str(meta.get_player_nonce(player)),
+                    )
                 ),
             )
         except WebsocketConnectionLost:
