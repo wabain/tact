@@ -107,9 +107,6 @@ class ClientConnection:
 
         print('...sent')
 
-        # FIXME: wrong
-        await self._inbound()
-
     async def _connect(self) -> None:
         if self._socket:
             return
@@ -124,7 +121,8 @@ class ClientConnection:
         finally:
             self._pending_connect = None
 
-        # self._inbound()
+        # TODO: retain future for cleanup? But closing the socket may be enough
+        asyncio.ensure_future(self._inbound())
 
     async def _inbound(self) -> None:
         """Receive and process incoming messages on a socket
