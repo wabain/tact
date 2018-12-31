@@ -28,8 +28,9 @@ _EXPECTED_GAME_STATES = (
 
 
 class RedisStore(AbstractRedisStore):
-    def __init__(self, url: str) -> None:
+    def __init__(self, url: str, db=-1) -> None:
         self._url = url
+        self._db = db
         self._pool: Optional[aioredis.Redis] = None
 
     async def get_pool(self) -> aioredis.Redis:
@@ -37,6 +38,8 @@ class RedisStore(AbstractRedisStore):
             return self._pool
 
         self._pool = await aioredis.create_redis_pool(self._url)
+        if self._db >= 0:
+            await self._pool.select(self._db)
         return self._pool
 
     async def put_session(self, conn_id: str, state: SessionState) -> None:
