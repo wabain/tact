@@ -7,6 +7,10 @@ from types import SimpleNamespace
 from typing import List
 
 
+class UserError(Exception):
+    pass
+
+
 def serve():
     from tact.server.local_server import listen
     from tact.server.redis_store import RedisStore
@@ -25,9 +29,7 @@ def load_from_env(keys: List[str]) -> SimpleNamespace:
     missing = [k for k, v in items if v is None]
 
     if missing:
-        raise ValueError(
-            'Missing required environment variables: ' + ', '.join(missing)
-        )
+        raise UserError('Missing required environment variables: ' + ', '.join(missing))
 
     return SimpleNamespace(**dict(items))
 
@@ -45,8 +47,16 @@ def main():
 
     try:
         cmd_handlers[args.cmd]()
-    except Exception as exc:  # pylint: disable=broad-except
+    except UserError as exc:
         parser.exit(status=1, message=f'error: {exc}')
+    except Exception as exc:  # pylint: disable=broad-except
+        from sys import exc_info
+        from traceback import print_tb
+
+        _, _, traceback = exc_info()
+        print_tb(traceback)
+
+        parser.exit(status=2, message=f'internal error: {type(exc).__name__}: {exc}')
 
 
 if __name__ == '__main__':
