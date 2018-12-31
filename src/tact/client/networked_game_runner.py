@@ -5,7 +5,7 @@ from typing import Dict, Tuple, Optional
 
 from ..game_model import GameModel, Move, Player
 from ..game_runner import AbstractGameRunner
-from .connection import ClientConnection
+from .connection import ClientConnection, ClientConnectionState
 
 
 class NetworkedGameRunner(AbstractGameRunner):
@@ -36,9 +36,9 @@ class NetworkedGameRunner(AbstractGameRunner):
         else:
             assert self._initializing_player is not None
             new_game_conn = self._connections[self._initializing_player]
-            await new_game_conn.joined()
+            await new_game_conn.wait_for_state(ClientConnectionState.GAME_START_PENDING)
 
-            await conn.join(player, game_id=new_game_conn.game_id)
+            await conn.join(player, game_id=new_game_conn.game_id())
 
         self._connections[player] = conn
 
@@ -46,7 +46,12 @@ class NetworkedGameRunner(AbstractGameRunner):
         if not self._connections:
             raise RuntimeError('cannot launch game with no agents registered')
 
-        await asyncio.gather(*(c.game_running() for c in self._connections))
+        client_games_running = [
+            c.wait_for_state(ClientConnectionState.GAME_RUNNING)
+            for c in self._connections.values()
+        ]
+
+        await asyncio.gather(*client_games_running)
 
     async def send_move(self, move: Move) -> GameModel:
         if move.player not in self._connections:
