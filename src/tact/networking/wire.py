@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import uuid
 import enum
+import functools
 import typing as typ
 from typing import Callable, Tuple
 
@@ -15,8 +16,37 @@ from voluptuous import Schema, ALLOW_EXTRA, All, Any, Coerce
 
 
 #
+# MESSAGE TYPES
+#
+
+
+class ClientMsgType(enum.Enum):
+    ILLEGAL_MSG = 'illegal_msg'
+    NEW_GAME = 'new_game'
+    JOIN_GAME = 'join_game'
+    REJOIN_GAME = 'rejoin_game'
+
+
+class ServerMsgType(enum.Enum):
+    ILLEGAL_MSG = 'illegal_msg'
+    GAME_JOINED = 'game_joined'
+    MOVE_PENDING = 'move_pending'
+    ILLEGAL_MOVE = 'illegal_move'
+    GAME_OVER = 'game_over'
+
+
+#
 # VALIDATION
 #
+
+
+def EnumValue(enum_type):
+    return functools.partial(_validate_enum_value, enum_type=enum_type)
+
+
+def _validate_enum_value(value, enum_type):
+    enum_type(value)
+    return value
 
 
 def ProtocolVersion(v: typ.Any) -> str:
@@ -53,8 +83,7 @@ client_msg_schema = All(
         {
             'version': ProtocolVersion,
             'msg_id': int,
-            # 'type': All(str, lambda s: ClientMsgType(s), msg='invalid message type'),
-            'type': str,
+            'type': All(str, EnumValue(ClientMsgType)),
             'msg': dict,
         },
         required=True,
@@ -100,14 +129,14 @@ game_over_schema = Schema(
 )
 
 
-def is_ok(s):
-    ServerMsgType(s)
-    return s
-
-
 server_msg_schema = All(
     Schema(
-        {'version': ProtocolVersion, 'msg_id': int, 'type': str, 'msg': dict},
+        {
+            'version': ProtocolVersion,
+            'msg_id': int,
+            'type': All(str, EnumValue(ServerMsgType)),
+            'msg': dict,
+        },
         required=True,
     ),
     Any(
@@ -122,21 +151,6 @@ server_msg_schema = All(
 #
 # SERIALIZATION/DESERIALIZATION
 #
-
-
-class ClientMsgType(enum.Enum):
-    ILLEGAL_MSG = 'illegal_msg'
-    NEW_GAME = 'new_game'
-    JOIN_GAME = 'join_game'
-    REJOIN_GAME = 'rejoin_game'
-
-
-class ServerMsgType(enum.Enum):
-    ILLEGAL_MSG = 'illegal_msg'
-    GAME_JOINED = 'game_joined'
-    MOVE_PENDING = 'move_pending'
-    ILLEGAL_MOVE = 'illegal_move'
-    GAME_OVER = 'game_over'
 
 
 class ClientMessage:
