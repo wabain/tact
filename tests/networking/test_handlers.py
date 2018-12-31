@@ -9,6 +9,10 @@ from tact.networking.handlers import (
     HandlerSet,
 )
 
+# Handler base classes establish subclass hooks without defining methods
+# locally
+# pylint: disable=too-few-public-methods
+
 
 def test_handler_set():
     class H(HandlerSet):

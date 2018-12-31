@@ -1,12 +1,29 @@
+"""Utilities for handler declaration
+
+Allows declaring handlers for a set up of input values using decorators on methods
+of a subclass of HandlerSet, which defines a `dispatch` method which calls the
+appropriate handler based on the value of the first argument.
+
+TODO
+====
+
+1. See if uses of this class could be replaced by functools.singledispatch or
+   a similar implementation.
+2. Otherwise, document handler delegation
+"""
 from __future__ import annotations
 from typing import Any, Dict, Generic, TypeVar
 import inspect
 
+# Handler base classes establish subclass hooks without defining methods
+# locally
+# pylint: disable=too-few-public-methods
+
 
 def handler(key):
-    def bind_handler(fn):
-        fn._handler_key = key
-        return fn
+    def bind_handler(func):
+        func._handler_key = key  # pylint: disable=protected-access
+        return func
 
     return bind_handler
 
