@@ -140,7 +140,7 @@ class ClientConnection:
         self._state = ConnState.GAME_RUNNING
         self._nonce = payload['player_nonce']
 
-        self.game_id = payload['game_id']
+        self._game_id = payload['game_id']
 
     @handler(ServerMsgType.MOVE_PENDING)
     def on_move_pending(self, payload) -> None:
