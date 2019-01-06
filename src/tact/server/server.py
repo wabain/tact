@@ -265,7 +265,7 @@ class OnClientMessage(HandlerSet[wire.ClientMsgType]):
         if meta.state != GameState.JOIN_PENDING:
             has_prior_join = True
         elif prior_conn_id is not None:
-            prior_session_state = await ctx.redis_store.read_session(prior_conn_id)
+            prior_session_state, _ = await ctx.redis_store.read_session(prior_conn_id)
             has_prior_join = prior_session_state != SessionState.NEED_JOIN_ACK
         else:
             has_prior_join = False
@@ -290,7 +290,7 @@ class OnClientMessage(HandlerSet[wire.ClientMsgType]):
                 ctx.ws_manager.close(prior_conn_id),
             )
 
-        meta = meta.with_state(GameState.RUNNING).with_conn_id(player, conn_id)
+        meta = meta.with_conn_id(player, conn_id)
 
         # TODO: validate state transitions?
         await asyncio.gather(

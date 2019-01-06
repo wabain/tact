@@ -11,6 +11,7 @@ import asyncio
 
 import pytest
 
+from tact.game_model import Player
 from tact.networking import wire
 from tact.server import server
 from tact.server.redis_store import RedisStore
@@ -24,6 +25,104 @@ from tests.server.test_redis_store import (  # pylint: disable=unused-import
 
 
 @pytest.mark.asyncio
+async def test_multi_join_pre_ack(
+    store: RedisStore
+):  # pylint: disable=redefined-outer-name
+    mgr = InMemoryWSManager()
+    ctx = server.ServerCtx(redis_store=store, ws_manager=mgr)
+
+    # Setup: client 1 starts new game
+    client1 = await mgr.open(ctx)
+
+    await client1.send(
+        ctx, wire.ClientMsgType.NEW_GAME, player=1, squares_per_row=8, run_to_win=5
+    )
+    _, _, payload = await client1.assert_recv(wire.ServerMsgType.GAME_JOINED)
+    game_id = payload['game_id']
+
+    # Two client instances join the game, before either acks
+    client2a = await mgr.open(ctx)
+    await client2a.send(ctx, wire.ClientMsgType.JOIN_GAME, game_id=game_id, player=2)
+    _, _, client2a_join = await client2a.assert_recv(wire.ServerMsgType.GAME_JOINED)
+
+    client2b = await mgr.open(ctx)
+    await client2b.send(ctx, wire.ClientMsgType.JOIN_GAME, game_id=game_id, player=2)
+    _, _, client2b_join = await client2b.assert_recv(wire.ServerMsgType.GAME_JOINED)
+
+    assert client2a_join['game_id'] == game_id
+    assert client2a_join['player'] == 2
+    assert client2b_join['game_id'] == game_id
+    assert client2b_join['player'] == 2
+    assert client2a_join['player_nonce'] == client2b_join['player_nonce']
+
+    assert (
+        client2a.closed
+    ), 'session should be closed when another pre-ack join request comes in'
+
+    # Clients 1 and 2b ack the join, and the game can begin
+    await client2b.send(ctx, wire.ClientMsgType.ACK_GAME_JOINED)
+    await client1.send(ctx, wire.ClientMsgType.ACK_GAME_JOINED)
+
+    await client1.assert_recv(wire.ServerMsgType.MOVE_PENDING, payload=dict(player=1))
+    await client2b.assert_recv(wire.ServerMsgType.MOVE_PENDING, payload=dict(player=1))
+
+
+@pytest.mark.asyncio
+async def test_multi_join_post_ack(
+    store: RedisStore
+):  # pylint: disable=redefined-outer-name
+    mgr = InMemoryWSManager()
+    ctx = server.ServerCtx(redis_store=store, ws_manager=mgr)
+
+    # Setup: client 1 starts new game
+    client1 = await mgr.open(ctx)
+
+    await client1.send(
+        ctx, wire.ClientMsgType.NEW_GAME, player=1, squares_per_row=8, run_to_win=5
+    )
+    _, _, payload = await client1.assert_recv(wire.ServerMsgType.GAME_JOINED)
+    game_id = payload['game_id']
+
+    # A client instance joins the game and sends an ack
+    client2a = await mgr.open(ctx)
+    await client2a.send(ctx, wire.ClientMsgType.JOIN_GAME, game_id=game_id, player=2)
+    _, _, client2a_join = await client2a.assert_recv(wire.ServerMsgType.GAME_JOINED)
+
+    assert client2a_join['game_id'] == game_id
+    assert client2a_join['player'] == 2
+
+    await client2a.send(ctx, wire.ClientMsgType.ACK_GAME_JOINED)
+
+    # Another client instance tries to join, post-ack
+    await _try_illegal_join_post_ack(ctx, game_id=game_id, player=Player(2))
+
+    # Client 1 acks the join, and the game can begin
+    await client1.send(ctx, wire.ClientMsgType.ACK_GAME_JOINED)
+
+    await client1.assert_recv(wire.ServerMsgType.MOVE_PENDING, payload=dict(player=1))
+    await client2a.assert_recv(wire.ServerMsgType.MOVE_PENDING, payload=dict(player=1))
+
+    # Another client instance tries to join, with the game running
+    await _try_illegal_join_post_ack(ctx, game_id=game_id, player=Player(2))
+
+
+async def _try_illegal_join_post_ack(
+    ctx: server.ServerCtx, game_id: str, player: Player
+) -> None:
+    mgr: InMemoryWSManager = ctx.ws_manager
+    client = await mgr.open(ctx)
+    illegal_join_msg_id = client.msg_id
+    await client.send(ctx, wire.ClientMsgType.JOIN_GAME, game_id=game_id, player=player)
+    await client.assert_recv(
+        wire.ServerMsgType.ILLEGAL_MSG,
+        payload=dict(
+            error='player has already been claimed', err_msg_id=illegal_join_msg_id
+        ),
+    )
+    assert client.closed
+
+
+@pytest.mark.asyncio
 async def test_simple_game(store: RedisStore):  # pylint: disable=redefined-outer-name
     mgr = InMemoryWSManager()
     ctx = server.ServerCtx(redis_store=store, ws_manager=mgr)
@@ -31,24 +130,12 @@ async def test_simple_game(store: RedisStore):  # pylint: disable=redefined-oute
     client1 = await mgr.open(ctx)
     client2 = await mgr.open(ctx)
 
-    await mgr.client_send(
-        ctx,
-        client1.conn_id,
-        json.dumps(
-            wire.ClientMessage.build(
-                wire.ClientMsgType.NEW_GAME,
-                msg_id=0,
-                player=1,
-                squares_per_row=8,
-                run_to_win=5,
-            )
-        ),
+    await client1.send(
+        ctx, wire.ClientMsgType.NEW_GAME, player=1, squares_per_row=8, run_to_win=5
     )
 
-    msg_type, msg_id, payload = await client1.recv()
+    _, _, payload = await client1.assert_recv(wire.ServerMsgType.GAME_JOINED, msg_id=0)
 
-    assert msg_type == wire.ServerMsgType.GAME_JOINED
-    assert msg_id == 0
     assert payload['player'] == 1
     assert payload['squares_per_row'] == 8
     assert payload['run_to_win'] == 5
@@ -56,20 +143,10 @@ async def test_simple_game(store: RedisStore):  # pylint: disable=redefined-oute
     game_id = payload['game_id']
     _p1_nonce = payload['player_nonce']
 
-    await mgr.client_send(
-        ctx,
-        client2.conn_id,
-        json.dumps(
-            wire.ClientMessage.build(
-                wire.ClientMsgType.JOIN_GAME, msg_id=0, game_id=game_id, player=2
-            )
-        ),
-    )
+    await client2.send(ctx, wire.ClientMsgType.JOIN_GAME, game_id=game_id, player=2)
 
-    msg_type, msg_id, payload = await client2.recv()
+    _, _, payload = await client2.assert_recv(wire.ServerMsgType.GAME_JOINED, msg_id=0)
 
-    assert msg_type == wire.ServerMsgType.GAME_JOINED
-    assert msg_id == 0
     assert payload['player'] == 2
     assert payload['squares_per_row'] == 8
     assert payload['run_to_win'] == 5
@@ -77,13 +154,7 @@ async def test_simple_game(store: RedisStore):  # pylint: disable=redefined-oute
     _p2_nonce = payload['player_nonce']
 
     for client in [client1, client2]:
-        await mgr.client_send(
-            ctx,
-            client.conn_id,
-            json.dumps(
-                wire.ClientMessage.build(wire.ClientMsgType.ACK_GAME_JOINED, msg_id=0)
-            ),
-        )
+        await client.send(ctx, wire.ClientMsgType.ACK_GAME_JOINED)
 
     for client in [client1, client2]:
         await client.assert_recv(wire.ServerMsgType.MOVE_PENDING, 0, dict(player=1))
@@ -92,7 +163,31 @@ async def test_simple_game(store: RedisStore):  # pylint: disable=redefined-oute
 class InMemoryWSClient:
     def __init__(self, conn_id: str):
         self.conn_id = conn_id
+        self.msg_id = 0
+        self.closed = False
         self._inbound = asyncio.Queue()
+
+    async def send(
+        self,
+        ctx: server.ServerCtx,
+        msg_type: wire.ClientMsgType,
+        *,
+        msg_id=None,
+        **payload,
+    ) -> None:
+        if msg_id is None:
+            msg_id = self.msg_id
+            self.msg_id += 1
+        else:
+            self.msg_id = msg_id + 1
+
+        mgr: InMemoryWSManager = ctx.ws_manager
+
+        await mgr.client_send(
+            ctx,
+            self.conn_id,
+            json.dumps(wire.ClientMessage.build(msg_type, msg_id=msg_id, **payload)),
+        )
 
     async def handle(self, msg: str):
         parsed = wire.ServerMessage.parse(json.loads(msg))
@@ -107,7 +202,9 @@ class InMemoryWSClient:
         assert act_msg_type == msg_type
         if msg_id is not None:
             assert act_msg_id == msg_id
-        assert act_payload == payload
+        if payload is not None:
+            assert act_payload == payload
+        return act_msg_type, act_msg_id, act_payload
 
 
 class InMemoryWSManager(AbstractWSManager):
@@ -139,9 +236,12 @@ class InMemoryWSManager(AbstractWSManager):
 
     async def close(self, conn_id: str) -> None:
         try:
-            del self._clients[conn_id]
+            client = self._clients[conn_id]
         except KeyError:
             pass
+
+        client.closed = True
+        del self._clients[conn_id]
 
         # TODO: Notify server
 

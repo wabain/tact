@@ -245,7 +245,7 @@ async def test_client_message_join_game(player: Player, conn_lost: bool):
     assert len(update_game_mock.mock_calls) == 2 if conn_lost else 1
     _, (game_key_out, _game_out, meta_out), _ = update_game_mock.mock_calls[0]
     assert game_key_out == mock_game_uuid.bytes
-    assert meta_out.state == GameState.RUNNING
+    assert meta_out.state == GameState.JOIN_PENDING
     assert meta_out.player_nonces == game_meta.player_nonces
 
     if player == 1:
