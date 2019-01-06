@@ -22,3 +22,16 @@ class AbstractWSManager(ABC):
     @abstractmethod
     async def close(self, conn_id: str):
         raise NotImplementedError
+
+    async def send_fatal(self, conn_id: str, msg: dict):
+        """Send a final message over a connection and then close it
+
+        Does not issue an error if the connection turns out to have already
+        been closed.
+        """
+        try:
+            await self.send(conn_id, msg)
+        except WebsocketConnectionLost:
+            return
+
+        await self.close(conn_id)

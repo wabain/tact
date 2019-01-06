@@ -246,7 +246,7 @@ class OnClientMessage(HandlerSet[wire.ClientMsgType]):
         meta = await ctx.redis_store.read_game_meta(game_id_bytes)
 
         if meta.state != GameState.pending_player(player):
-            await ctx.ws_manager.send(
+            await ctx.ws_manager.send_fatal(
                 conn_id,
                 wire.ServerMessage.build(
                     wire.ServerMsgType.ILLEGAL_MSG,
@@ -255,7 +255,7 @@ class OnClientMessage(HandlerSet[wire.ClientMsgType]):
                     err_msg_id=msg_id,
                 ),
             )
-            await ctx.ws_manager.close(conn_id)
+            return
 
         # TODO: validate state transitions?
         await asyncio.gather(
