@@ -117,11 +117,27 @@ async def test_client_message_reply_illegal_msg():
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize('player', [1, 2])
-async def test_client_message_new_game(player: Player):
+@pytest.mark.parametrize(
+    'player', [pytest.param(1, id='join_player1'), pytest.param(2, id='join_player2')]
+)
+@pytest.mark.parametrize(
+    'conn_lost',
+    [pytest.param(False, id='conn_stable'), pytest.param(True, id='conn_lost')],
+)
+async def test_client_message_new_game(player: Player, conn_lost: bool):
+    """Test handling of new_game messages
+
+    Parameters:
+    player: player one or two joined the game
+    conn_lost: whether the reply send to the player succeeded succeeded
+    """
+    mock_game_uuid = uuid.UUID(MOCK_GAME_ID)
     ctx = mock_server_ctx()
 
-    put_game = Mock(return_value=uuid.UUID(MOCK_GAME_ID))
+    if conn_lost:
+        ctx.ws_manager.mock.send = Mock(side_effect=WebsocketConnectionLost)
+
+    put_game = Mock(return_value=mock_game_uuid)
     ctx.redis_store.mock.put_game = put_game
 
     # Message type doesn't matter much here; voluptous will bail before doing
@@ -166,6 +182,10 @@ async def test_client_message_new_game(player: Player):
             },
         },
     )
+
+    if conn_lost:
+        ctx.redis_store.mock.delete_game.assert_called_with(mock_game_uuid.bytes)
+        ctx.redis_store.mock.delete_session.assert_called_with('foo')
 
 
 def assert_session_cleaned_up(ctx: ServerCtx, conn_id: str) -> None:
