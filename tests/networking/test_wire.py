@@ -50,8 +50,9 @@ def test_server_message_build_invalid_payload():
 
 
 def test_server_message_parse():
-    msg_type, payload = ServerMessage.parse(SERVER_MSG)
+    msg_type, msg_id, payload = ServerMessage.parse(SERVER_MSG)
     assert msg_type == ServerMsgType.GAME_JOINED
+    assert msg_id == 100
     assert payload == {'game_id': 'dummy-game-id', 'player_nonce': uuid.UUID(NONCE)}
 
 
@@ -84,8 +85,9 @@ def test_client_message_build_invalid_payload():
 
 
 def test_client_message_parse():
-    msg_type, payload = ClientMessage.parse(CLIENT_MSG)
+    msg_type, msg_id, payload = ClientMessage.parse(CLIENT_MSG)
     assert msg_type == ClientMsgType.NEW_GAME
+    assert msg_id == 100
     assert payload == {'player': 1, 'squares_per_row': 8, 'run_to_win': 5}
 
 

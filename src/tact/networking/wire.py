@@ -103,7 +103,6 @@ client_msg_schema = All(
 
 game_joined_schema = Schema(
     {
-        'type': 'game_joined',
         'game_id': str,
         'player': int,
         'player_nonce': lambda nonce: (  # pylint: disable=unnecessary-lambda
@@ -114,15 +113,12 @@ game_joined_schema = Schema(
     }
 )
 
-move_pending_schema = Schema(
-    {'type': 'move_pending', 'player': PlayerID}, required=True
-)
+move_pending_schema = Schema({'player': PlayerID}, required=True)
 
-illegal_move_schema = Schema({'type': 'illegal_move', 'error': str}, required=True)
+illegal_move_schema = Schema({'error': str}, required=True)
 
 game_over_schema = Schema(
     {
-        'type': 'game_over',
         'winner': Any(PlayerID, None),
         'is_draw': bool,
         'is_technical_forfeit': bool,
@@ -158,10 +154,10 @@ server_msg_schema = All(
 
 class ClientMessage:
     @staticmethod
-    def parse(msg: typ.Any) -> Tuple[ClientMsgType, dict]:
+    def parse(msg: typ.Any) -> Tuple[ClientMsgType, int, dict]:
         msg = client_msg_schema(msg)
         msg_type = ClientMsgType(msg['type'])
-        return msg_type, msg['msg']
+        return msg_type, msg['msg_id'], msg['msg']
 
     @staticmethod
     def build(msg_type: ClientMsgType, msg_id: int, **payload) -> dict:
@@ -175,10 +171,10 @@ class ClientMessage:
 
 class ServerMessage:
     @staticmethod
-    def parse(msg: typ.Any) -> Tuple[ServerMsgType, dict]:
+    def parse(msg: typ.Any) -> Tuple[ServerMsgType, int, dict]:
         msg = server_msg_schema(msg)
         msg_type = ServerMsgType(msg['type'])
-        return msg_type, msg['msg']
+        return msg_type, msg['msg_id'], msg['msg']
 
     @staticmethod
     def build(msg_type: ServerMsgType, msg_id: int, **payload) -> dict:

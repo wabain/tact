@@ -92,7 +92,7 @@ async def new_message(ctx: ServerCtx, conn_id: str, msg_src: str) -> None:
         return
 
     try:
-        msg_type, payload = wire.ClientMessage.parse(msg)
+        msg_type, msg_id, payload = wire.ClientMessage.parse(msg)
     except MultipleInvalid as exc:
         err_msg_id = msg.get('msg_id') if isinstance(msg, dict) else None
         if err_msg_id is not None and not isinstance(err_msg_id, int):
@@ -118,7 +118,7 @@ async def new_message(ctx: ServerCtx, conn_id: str, msg_src: str) -> None:
     dispatch = typing.cast(
         'HandlerSet[wire.ClientMsgType].dispatch', OnClientMessage.dispatch
     )
-    await dispatch(msg_type, ctx=ctx, conn_id=conn_id, payload=payload)
+    await dispatch(msg_type, ctx=ctx, conn_id=conn_id, msg_id=msg_id, payload=payload)
 
 
 def format_validation_error(exc: MultipleInvalid) -> str:
@@ -152,17 +152,19 @@ class OnClientMessage(HandlerSet[wire.ClientMsgType]):
 
     @handler(wire.ClientMsgType.ILLEGAL_MSG)
     @staticmethod
-    async def on_illegal_msg(*, ctx: ServerCtx, conn_id: str, payload: dict):
+    async def on_illegal_msg(
+        *, ctx: ServerCtx, conn_id: str, msg_id: int, payload: dict
+    ):
         await asyncio.gather(
             ctx.redis_store.delete_session(conn_id), ctx.ws_manager.close(conn_id)
         )
 
     @handler(wire.ClientMsgType.NEW_GAME)
     @staticmethod
-    async def on_new_game(*, ctx: ServerCtx, conn_id: str, payload: dict):
-        player = payload['player']
-        squares = payload['squares_per_row']
-        target_len = payload['run_to_win']
+    async def on_new_game(*, ctx: ServerCtx, conn_id: str, msg_id: int, payload: dict):
+        player: Player = payload['player']
+        squares: int = payload['squares_per_row']
+        target_len: int = payload['run_to_win']
 
         if player == 1:
             state = GameState.JOIN_PENDING_P2
@@ -210,12 +212,14 @@ class OnClientMessage(HandlerSet[wire.ClientMsgType]):
 
     @handler(wire.ClientMsgType.JOIN_GAME)
     @staticmethod
-    async def on_join_game(*, ctx: ServerCtx, conn_id: str, payload: dict):
+    async def on_join_game(*, ctx: ServerCtx, conn_id: str, msg_id: int, payload: dict):
         pass
 
     @handler(wire.ClientMsgType.REJOIN_GAME)
     @staticmethod
-    async def on_rejoin_game(*, ctx: ServerCtx, conn_id: str, payload: dict):
+    async def on_rejoin_game(
+        *, ctx: ServerCtx, conn_id: str, msg_id: int, payload: dict
+    ):
         raise NotImplementedError('on rejoin game')
 
     # @handler(wire.ClientMsgType.NEW_MOVE)

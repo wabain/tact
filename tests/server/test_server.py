@@ -140,8 +140,6 @@ async def test_client_message_new_game(player: Player, conn_lost: bool):
     put_game = Mock(return_value=mock_game_uuid)
     ctx.redis_store.mock.put_game = put_game
 
-    # Message type doesn't matter much here; voluptous will bail before doing
-    # the granular validation
     msg = json.dumps(
         {
             'version': '0.1',
