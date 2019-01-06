@@ -13,7 +13,7 @@ class AbstractWSManager(ABC):
         # This is implemented as a separate method primarily for test
         # convenience
         serialized = json.dumps(msg, separators=(',', ':'))
-        self._send_serialized(conn_id, serialized)
+        await self._send_serialized(conn_id, serialized)
 
     @abstractmethod
     async def _send_serialized(self, conn_id: str, msg: str) -> None:
