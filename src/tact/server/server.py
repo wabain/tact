@@ -110,7 +110,15 @@ async def new_message(ctx: ServerCtx, conn_id: str, msg_src: str) -> None:
 
         return
 
-    await OnClientMessage.dispatch(msg_type, ctx=ctx, conn_id=conn_id, payload=payload)
+    # Filling in the generic type via inheritance in OnClientMessage doesn't
+    # seem to be working - https://github.com/python/mypy/issues/1337?
+    #
+    # This cast makes the code typecheck with mypy 0.650, but it doesn't seem
+    # to actually validate the msg_type argument.
+    dispatch = typing.cast(
+        'HandlerSet[wire.ClientMsgType].dispatch', OnClientMessage.dispatch
+    )
+    await dispatch(msg_type, ctx=ctx, conn_id=conn_id, payload=payload)
 
 
 def format_validation_error(exc: MultipleInvalid) -> str:
@@ -136,19 +144,8 @@ def format_validation_error_path(path: List[Any]):
 # MESSAGE HANDLER FUNCTIONS
 #
 
-if typing.TYPE_CHECKING:  # pragma: no cover
-    # pylint: disable=too-few-public-methods
-    class BaseOnClientMessage(HandlerSet[wire.ClientMsgType]):
-        pass
 
-
-else:
-
-    class BaseOnClientMessage(HandlerSet):  # pylint: disable=too-few-public-methods
-        pass
-
-
-class OnClientMessage(BaseOnClientMessage):
+class OnClientMessage(HandlerSet[wire.ClientMsgType]):
     # Handler callbacks must all have the same arguments
     #
     # pylint: disable=unused-argument
