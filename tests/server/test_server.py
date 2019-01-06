@@ -186,6 +186,95 @@ async def test_client_message_new_game(player: Player, conn_lost: bool):
         ctx.redis_store.mock.delete_session.assert_called_with('foo')
 
 
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    'player', [pytest.param(1, id='join_player1'), pytest.param(2, id='join_player2')]
+)
+@pytest.mark.parametrize(
+    'conn_lost',
+    [pytest.param(False, id='conn_stable'), pytest.param(True, id='conn_lost')],
+)
+async def test_client_message_join_game(player: Player, conn_lost: bool):
+    """Test handling of join_game messages
+
+    Parameters:
+    player: player one or two joined the game
+    conn_lost: whether the reply send to the player succeeded succeeded
+    """
+    mock_game_uuid = uuid.UUID(MOCK_GAME_ID)
+
+    game_model = GameModel(squares=8, target_len=5)
+
+    initial_state = GameState.pending_player(player)
+    game_meta = GameMeta(
+        state=initial_state,
+        player_nonces=(uuid.uuid4(), uuid.uuid4()),
+        conn_ids=(None, 'bar') if player == 1 else ('bar', None),
+    )
+
+    # Configure mocks
+    ctx = mock_server_ctx()
+    ctx.redis_store.mock.read_game = Mock(return_value=(initial_state, game_model))
+    ctx.redis_store.mock.read_game_meta = Mock(return_value=game_meta)
+
+    if conn_lost:
+        ctx.ws_manager.mock.send = Mock(side_effect=WebsocketConnectionLost)
+
+    # Dispatch message
+    msg = json.dumps(
+        {
+            'version': '0.1',
+            'msg_id': 10,
+            'type': 'join_game',
+            'msg': {'game_id': MOCK_GAME_ID, 'player': player},
+        }
+    )
+
+    await server.new_message(ctx, 'foo', msg)
+
+    ctx.redis_store.mock.put_session.assert_called_with('foo', SessionState.RUNNING)
+
+    update_game_mock = ctx.redis_store.mock.update_game
+    assert len(update_game_mock.mock_calls) == 2 if conn_lost else 1
+    _, (game_key_out, _game_out, meta_out), _ = update_game_mock.mock_calls[0]
+    assert game_key_out == mock_game_uuid.bytes
+    assert meta_out.state == GameState.RUNNING
+    assert meta_out.player_nonces == game_meta.player_nonces
+
+    if player == 1:
+        assert meta_out.conn_ids == ('foo', 'bar')
+    else:
+        assert meta_out.conn_ids == ('bar', 'foo')
+
+    ctx.ws_manager.mock.send.assert_called_with(
+        'foo',
+        {
+            'version': '0.1',
+            'msg_id': 0,
+            'type': 'game_joined',
+            'msg': {
+                'player': player,
+                'squares_per_row': 8,
+                'run_to_win': 5,
+                'game_id': MOCK_GAME_ID,
+                'player_nonce': str(game_meta.get_player_nonce(player)),
+            },
+        },
+    )
+
+    if conn_lost:
+        ctx.redis_store.mock.delete_session.assert_called_with('foo')
+
+        _, (game_key_out, _game_out, meta_out), _ = update_game_mock.mock_calls[1]
+        assert game_key_out == mock_game_uuid.bytes
+        assert meta_out.state == GameState.pending_player(player)
+
+        if player == 1:
+            assert meta_out.conn_ids == (None, 'bar')
+        else:
+            assert meta_out.conn_ids == ('bar', None)
+
+
 def assert_session_cleaned_up(ctx: ServerCtx, conn_id: str) -> None:
     ctx.ws_manager.mock.close.assert_called_with(conn_id)
     ctx.redis_store.mock.delete_session.assert_called_with(conn_id)
@@ -218,6 +307,7 @@ class MockRedisStore(AbstractRedisStore):
         self.mock.put_game = MagicMock(side_effect=NotImplementedError)
         self.mock.read_session = MagicMock(side_effect=NotImplementedError)
         self.mock.read_game = MagicMock(side_effect=NotImplementedError)
+        self.mock.read_game_meta = MagicMock(side_effect=NotImplementedError)
 
     async def put_session(self, conn_id: str, state: SessionState) -> None:
         return self.mock.put_session(conn_id, state)
@@ -241,6 +331,9 @@ class MockRedisStore(AbstractRedisStore):
 
     async def read_game(self, key: bytes) -> Tuple[GameState, GameModel]:
         return self.mock.read_game(key)
+
+    async def read_game_meta(self, key: bytes) -> GameMeta:
+        return self.mock.read_game_meta(key)
 
     async def delete_game(self, key: bytes):
         return self.mock.delete_game(key)

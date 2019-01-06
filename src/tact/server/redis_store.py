@@ -6,6 +6,7 @@ from __future__ import annotations
 import enum
 import json
 import uuid
+import typing
 from typing import Tuple, Optional
 
 from .import_util import try_server_imports
@@ -125,6 +126,28 @@ class RedisStore(AbstractRedisStore):
         )
         return game_state, game
 
+    async def read_game_meta(self, key: bytes) -> GameMeta:
+        redis = await self.get_pool()
+        out: Tuple[Optional[bytes], ...] = await redis.hmget(
+            key, 'state', 'nonce.p1', 'nonce.p2', 'conn_id.p1', 'conn_id.p2'
+        )
+
+        if any(v is None for v in out):
+            raise LookupError(
+                f'Failed to read desired keys for game {uuid.UUID(bytes=key)}'
+            )
+
+        state, nonce_p1, nonce_p2, conn_id_p1, conn_id_p2 = typing.cast(
+            Tuple[bytes, ...], out
+        )
+        return decode_game_meta(
+            state=state.decode(),
+            nonce_p1=nonce_p1,
+            nonce_p2=nonce_p2,
+            conn_id_p1=conn_id_p1.decode(),
+            conn_id_p2=conn_id_p2.decode(),
+        )
+
     async def delete_game(self, key: bytes):
         """Delete the given game from Redis"""
         redis = await self.get_pool()
@@ -166,17 +189,25 @@ def decode_game_fields(
 
 
 def encode_game_meta(meta: GameMeta) -> dict:
+    if any(c == '' for c in meta.conn_ids):
+        raise ValueError('empty string is not a legal conn_id')
+
     return {
         'state': serialize_enum(meta.state, _EXPECTED_GAME_STATES),
         'nonce.p1': meta.player_nonces[0].bytes,
         'nonce.p2': meta.player_nonces[1].bytes,
+        'conn_id.p1': meta.conn_ids[0] or '',
+        'conn_id.p2': meta.conn_ids[1] or '',
     }
 
 
-def decode_game_meta(*, state: str, nonce_p1: bytes, nonce_p2: bytes) -> GameMeta:
+def decode_game_meta(
+    *, state: str, nonce_p1: bytes, nonce_p2: bytes, conn_id_p1: str, conn_id_p2: str
+) -> GameMeta:
     return GameMeta(
         state=GameState(state),
         player_nonces=(uuid.UUID(bytes=nonce_p1), uuid.UUID(bytes=nonce_p2)),
+        conn_ids=(conn_id_p1 or None, conn_id_p2 or None),
     )
 
 

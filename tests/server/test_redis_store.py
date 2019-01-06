@@ -54,13 +54,19 @@ async def test_session(store):
 async def test_game(store):
     model = GameModel(squares=8, target_len=5)
     meta = GameMeta(
-        state=GameState.JOIN_PENDING_P2, player_nonces=(uuid.uuid4(), uuid.uuid4())
+        state=GameState.JOIN_PENDING_P2,
+        player_nonces=(uuid.uuid4(), uuid.uuid4()),
+        conn_ids=('foo', 'bar'),
     )
     game_id = await store.put_game(model, meta)
 
     model2 = model.copy()
     model2.apply_move(Move(player=1, coords=(0, 0)))
-    meta2 = GameMeta(state=GameState.RUNNING, player_nonces=meta.player_nonces)
+    meta2 = GameMeta(
+        state=GameState.RUNNING,
+        player_nonces=meta.player_nonces,
+        conn_ids=('foo', None),
+    )
 
     await store.update_game(game_id.bytes, game=model2)
     await store.update_game(game_id.bytes, meta=meta2)
@@ -69,6 +75,12 @@ async def test_game(store):
 
     assert state_out == GameState.RUNNING
     assert model_out == model2
+
+    meta_out = await store.read_game_meta(game_id.bytes)
+
+    assert meta_out.state == meta2.state
+    assert meta_out.player_nonces == meta2.player_nonces
+    assert meta_out.conn_ids == meta2.conn_ids
 
     await store.delete_game(game_id.bytes)
 

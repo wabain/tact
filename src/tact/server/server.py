@@ -42,18 +42,47 @@ class GameState(enum.Enum):
     RUNNING = 'running'
     COMPLETED = 'completed'
 
+    @staticmethod
+    def pending_player(player: Player) -> GameState:
+        if player == 1:
+            return GameState.JOIN_PENDING_P1
+        assert player == 2
+        return GameState.JOIN_PENDING_P2
+
 
 class GameMeta:  # pylint: disable=too-few-public-methods
     """Metadata associated with a server-managed game"""
 
     def __init__(
-        self, state: GameState, player_nonces: Tuple[uuid.UUID, uuid.UUID]
+        self,
+        state: GameState,
+        player_nonces: Tuple[uuid.UUID, uuid.UUID],
+        conn_ids: Tuple[Optional[str], Optional[str]],
     ) -> None:
         self.state = state
         self.player_nonces = player_nonces
+        self.conn_ids = conn_ids
+
+    def with_state(self, state: GameState) -> GameMeta:
+        return GameMeta(
+            state=state, player_nonces=self.player_nonces, conn_ids=self.conn_ids
+        )
 
     def get_player_nonce(self, player: Player) -> uuid.UUID:
         return self.player_nonces[0 if player == 1 else 1]
+
+    def get_conn_id(self, player: Player) -> Optional[str]:
+        return self.conn_ids[0 if player == 1 else 1]
+
+    def with_conn_id(self, player: Player, conn_id: Optional[str]) -> GameMeta:
+        cid1, cid2 = self.conn_ids
+        if player == 1:
+            cid1 = conn_id
+        else:
+            cid2 = conn_id
+        return GameMeta(
+            state=self.state, player_nonces=self.player_nonces, conn_ids=(cid1, cid2)
+        )
 
 
 class ServerCtx:  # pylint: disable=too-few-public-methods
@@ -166,11 +195,7 @@ class OnClientMessage(HandlerSet[wire.ClientMsgType]):
         squares: int = payload['squares_per_row']
         target_len: int = payload['run_to_win']
 
-        if player == 1:
-            state = GameState.JOIN_PENDING_P2
-        else:
-            assert player == 2
-            state = GameState.JOIN_PENDING_P1
+        state = GameState.pending_player(Player(2) if player == 1 else Player(1))
 
         # TODO: handle validation of relative values of params
         game = GameModel(squares=squares, target_len=target_len)
@@ -178,7 +203,7 @@ class OnClientMessage(HandlerSet[wire.ClientMsgType]):
         meta = GameMeta(
             state=state,
             player_nonces=(uuid.uuid4(), uuid.uuid4()),
-            # join_conns=(conn_id, None) if player == 1 else (None, conn_id),
+            conn_ids=(conn_id, None) if player == 1 else (None, conn_id),
         )
 
         print('write to redis...')
@@ -213,7 +238,62 @@ class OnClientMessage(HandlerSet[wire.ClientMsgType]):
     @handler(wire.ClientMsgType.JOIN_GAME)
     @staticmethod
     async def on_join_game(*, ctx: ServerCtx, conn_id: str, msg_id: int, payload: dict):
-        pass
+        game_id: str = payload['game_id']
+        player: Player = payload['player']
+
+        game_id_bytes = uuid.UUID(game_id).bytes
+
+        meta = await ctx.redis_store.read_game_meta(game_id_bytes)
+
+        if meta.state != GameState.pending_player(player):
+            await ctx.ws_manager.send(
+                conn_id,
+                wire.ServerMessage.build(
+                    wire.ServerMsgType.ILLEGAL_MSG,
+                    msg_id=0,  # FIXME
+                    error='player has already been claimed',
+                    err_msg_id=msg_id,
+                ),
+            )
+            await ctx.ws_manager.close(conn_id)
+
+        # TODO: validate state transitions?
+        await asyncio.gather(
+            ctx.redis_store.update_game(
+                game_id_bytes,
+                meta=meta.with_state(GameState.RUNNING).with_conn_id(player, conn_id),
+            ),
+            ctx.redis_store.put_session(conn_id, SessionState.RUNNING),
+        )
+
+        # XXX: org?
+        _, game = await ctx.redis_store.read_game(game_id_bytes)
+
+        try:
+            await ctx.ws_manager.send(
+                conn_id,
+                wire.ServerMessage.build(
+                    wire.ServerMsgType.GAME_JOINED,
+                    msg_id=0,  # FIXME
+                    game_id=game_id,
+                    player=player,
+                    player_nonce=str(meta.get_player_nonce(player)),
+                    squares_per_row=game.squares,
+                    run_to_win=game.target_len,
+                ),
+            )
+        except WebsocketConnectionLost:
+            # Roll back game updates...
+            rollback_state = GameState.pending_player(player)
+            await asyncio.gather(
+                ctx.redis_store.delete_session(conn_id),
+                ctx.redis_store.update_game(
+                    game_id_bytes,
+                    meta=meta.with_state(rollback_state).with_conn_id(player, None),
+                ),
+            )
+
+        # TODO: broadcast updated game state
 
     @handler(wire.ClientMsgType.REJOIN_GAME)
     @staticmethod
@@ -266,6 +346,10 @@ class AbstractRedisStore(ABC):
     @abstractmethod
     async def read_game(self, key: bytes) -> Tuple[GameState, GameModel]:
         """Read the state of the game with the given key"""
+        raise NotImplementedError
+
+    @abstractmethod
+    async def read_game_meta(self, key: bytes) -> GameMeta:
         raise NotImplementedError
 
     @abstractmethod
