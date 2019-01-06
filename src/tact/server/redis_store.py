@@ -18,14 +18,9 @@ from ..game_model import GameModel, Player
 from .server import SessionState, GameState, GameMeta, AbstractRedisStore
 
 
-_EXPECTED_SESSION_STATES = ('need-join', 'running')
+_EXPECTED_SESSION_STATES = ('need-join', 'need-join-ack', 'running')
 
-_EXPECTED_GAME_STATES = (
-    'join-pending-player1',
-    'join-pending-player2',
-    'running',
-    'completed',
-)
+_EXPECTED_GAME_STATES = ('join-pending', 'running', 'completed')
 
 
 class RedisStore(AbstractRedisStore):
@@ -43,29 +38,36 @@ class RedisStore(AbstractRedisStore):
             await self._pool.select(self._db)
         return self._pool
 
-    async def put_session(self, conn_id: str, state: SessionState) -> None:
+    async def put_session(
+        self, conn_id: str, state: SessionState, game_id: Optional[bytes] = None
+    ) -> None:
         """Write a new session into Redis"""
 
         # TODO: expiry
         redis = await self.get_pool()
         await redis.hmset_dict(
             _conn_id_to_redis_key(conn_id),
-            {'state': serialize_enum(state, _EXPECTED_SESSION_STATES)},
+            {
+                'state': serialize_enum(state, _EXPECTED_SESSION_STATES),
+                'game_id': game_id or b'',
+            },
         )
 
-    async def read_session(self, conn_id: str) -> SessionState:
+    async def read_session(self, conn_id: str) -> Tuple[SessionState, Optional[bytes]]:
         """Read the state of a session from Redis"""
         redis = await self.get_pool()
-        state: Optional[str] = await redis.hget(
-            _conn_id_to_redis_key(conn_id), 'state', encoding='utf-8'
+        out: Tuple[Optional[bytes], ...] = await redis.hmget(
+            _conn_id_to_redis_key(conn_id), 'state', 'game_id'
         )
+
+        state, game_id = out
 
         # TODO: If there are real scenarios where this could happen
         # it would be better to let the caller handle it
         if state is None:
             raise LookupError(f'Failed to find connection {conn_id}')
 
-        return SessionState(state)
+        return SessionState(state.decode()), game_id or None
 
     async def delete_session(self, conn_id: str) -> None:
         """Delete a session from Redis"""

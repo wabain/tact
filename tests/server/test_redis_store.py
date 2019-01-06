@@ -13,6 +13,8 @@ from tact.server.redis_store import RedisStore
 URL = 'redis://localhost'
 TEST_DB_NUMBER = 1
 
+GAME_ID = 'ca112072-ddf0-4839-9db7-f28ca9309ec6'
+
 
 @pytest.fixture(scope='module')
 def redis_test_db_init():
@@ -41,10 +43,11 @@ async def test_session(store):
         await store.read_session('foo')
 
     await store.put_session('foo', SessionState.NEED_JOIN)
-    assert (await store.read_session('foo')) == SessionState.NEED_JOIN
+    assert (await store.read_session('foo')) == (SessionState.NEED_JOIN, None)
 
-    await store.put_session('foo', SessionState.RUNNING)
-    assert (await store.read_session('foo')) == SessionState.RUNNING
+    game_id_bytes = uuid.UUID(GAME_ID).bytes
+    await store.put_session('foo', SessionState.RUNNING, game_id_bytes)
+    assert (await store.read_session('foo')) == (SessionState.RUNNING, game_id_bytes)
 
     await store.delete_session('foo')
     await assert_cleared(await store.get_pool())
@@ -54,7 +57,7 @@ async def test_session(store):
 async def test_game(store):
     model = GameModel(squares=8, target_len=5)
     meta = GameMeta(
-        state=GameState.JOIN_PENDING_P2,
+        state=GameState.JOIN_PENDING,
         player_nonces=(uuid.uuid4(), uuid.uuid4()),
         conn_ids=('foo', 'bar'),
     )

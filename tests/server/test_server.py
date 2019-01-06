@@ -28,7 +28,9 @@ MOCK_GAME_ID = 'ca112072-ddf0-4839-9db7-f28ca9309ec6'
 async def test_new_connection():
     ctx = mock_server_ctx()
     await server.new_connection(ctx, conn_id='foo')
-    ctx.redis_store.mock.put_session.assert_called_with('foo', SessionState.NEED_JOIN)
+    ctx.redis_store.mock.put_session.assert_called_with(
+        'foo', SessionState.NEED_JOIN, None
+    )
 
 
 @pytest.mark.asyncio
@@ -137,6 +139,10 @@ async def test_client_message_new_game(player: Player, conn_lost: bool):
     if conn_lost:
         ctx.ws_manager.mock.send = Mock(side_effect=WebsocketConnectionLost)
 
+    ctx.redis_store.mock.read_session = Mock(
+        return_value=(SessionState.NEED_JOIN, None)
+    )
+
     put_game = Mock(return_value=mock_game_uuid)
     ctx.redis_store.mock.put_game = put_game
 
@@ -151,18 +157,15 @@ async def test_client_message_new_game(player: Player, conn_lost: bool):
 
     await server.new_message(ctx, 'foo', msg)
 
-    ctx.redis_store.mock.put_session.assert_called_with('foo', SessionState.RUNNING)
+    ctx.redis_store.mock.put_session.assert_called_with(
+        'foo', SessionState.NEED_JOIN_ACK, mock_game_uuid.bytes
+    )
 
     assert len(put_game.mock_calls) == 1
     _, (game_model, game_meta), _ = put_game.mock_calls[0]
     assert game_model == GameModel(squares=8, target_len=5)
 
-    if player == 1:
-        expected_game_state = GameState.JOIN_PENDING_P2
-    else:
-        expected_game_state = GameState.JOIN_PENDING_P1
-
-    assert game_meta.state == expected_game_state
+    assert game_meta.state == GameState.JOIN_PENDING
     player_nonce = game_meta.get_player_nonce(player)
 
     ctx.ws_manager.mock.send.assert_called_with(
@@ -205,16 +208,18 @@ async def test_client_message_join_game(player: Player, conn_lost: bool):
 
     game_model = GameModel(squares=8, target_len=5)
 
-    initial_state = GameState.pending_player(player)
     game_meta = GameMeta(
-        state=initial_state,
+        state=GameState.JOIN_PENDING,
         player_nonces=(uuid.uuid4(), uuid.uuid4()),
         conn_ids=(None, 'bar') if player == 1 else ('bar', None),
     )
 
     # Configure mocks
     ctx = mock_server_ctx()
-    ctx.redis_store.mock.read_game = Mock(return_value=(initial_state, game_model))
+    ctx.redis_store.mock.read_session = Mock(
+        return_value=(SessionState.NEED_JOIN, None)
+    )
+    ctx.redis_store.mock.read_game = Mock(return_value=(game_meta.state, game_model))
     ctx.redis_store.mock.read_game_meta = Mock(return_value=game_meta)
 
     if conn_lost:
@@ -232,7 +237,9 @@ async def test_client_message_join_game(player: Player, conn_lost: bool):
 
     await server.new_message(ctx, 'foo', msg)
 
-    ctx.redis_store.mock.put_session.assert_called_with('foo', SessionState.RUNNING)
+    ctx.redis_store.mock.put_session.assert_called_with(
+        'foo', SessionState.NEED_JOIN_ACK, mock_game_uuid.bytes
+    )
 
     update_game_mock = ctx.redis_store.mock.update_game
     assert len(update_game_mock.mock_calls) == 2 if conn_lost else 1
@@ -267,7 +274,7 @@ async def test_client_message_join_game(player: Player, conn_lost: bool):
 
         _, (game_key_out, _game_out, meta_out), _ = update_game_mock.mock_calls[1]
         assert game_key_out == mock_game_uuid.bytes
-        assert meta_out.state == GameState.pending_player(player)
+        assert meta_out.state == GameState.JOIN_PENDING
 
         if player == 1:
             assert meta_out.conn_ids == (None, 'bar')
@@ -309,8 +316,10 @@ class MockRedisStore(AbstractRedisStore):
         self.mock.read_game = MagicMock(side_effect=NotImplementedError)
         self.mock.read_game_meta = MagicMock(side_effect=NotImplementedError)
 
-    async def put_session(self, conn_id: str, state: SessionState) -> None:
-        return self.mock.put_session(conn_id, state)
+    async def put_session(
+        self, conn_id: str, state: SessionState, game_id: Optional[bytes] = None
+    ) -> None:
+        return self.mock.put_session(conn_id, state, game_id)
 
     async def read_session(self, conn_id: str) -> SessionState:
         return self.mock.read_session(conn_id)

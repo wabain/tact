@@ -27,6 +27,7 @@ class ClientMsgType(enum.Enum):
     ILLEGAL_MSG = 'illegal_msg'
     NEW_GAME = 'new_game'
     JOIN_GAME = 'join_game'
+    ACK_GAME_JOINED = 'ack_game_joined'
     REJOIN_GAME = 'rejoin_game'
 
 
@@ -76,6 +77,8 @@ new_game_schema = Schema(
 
 join_game_schema = Schema({'game_id': str, 'player': PlayerID}, required=True)
 
+ack_game_joined_schema = Schema({}, required=True)
+
 rejoin_game_schema = Schema(
     {'game_id': str, 'player': PlayerID, 'player_nonce': Coerce(uuid.UUID)},
     required=True,
@@ -95,6 +98,7 @@ client_msg_schema = All(
         part({'type': 'illegal_msg', 'msg': illegal_msg_schema}),
         part({'type': 'new_game', 'msg': new_game_schema}),
         part({'type': 'join_game', 'msg': join_game_schema}),
+        part({'type': 'ack_game_joined', 'msg': ack_game_joined_schema}),
         part({'type': 'rejoin_game', 'msg': rejoin_game_schema}),
     ),
 )
@@ -141,6 +145,7 @@ server_msg_schema = All(
     Any(
         part({'type': 'illegal_msg', 'msg': illegal_msg_schema}),
         part({'type': 'game_joined', 'msg': game_joined_schema}),
+        part({'type': 'move_pending', 'msg': move_pending_schema}),
         part({'type': 'illegal_move', 'msg': illegal_move_schema}),
         part({'type': 'game_over', 'msg': game_over_schema}),
     ),

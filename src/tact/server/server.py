@@ -16,7 +16,7 @@ from abc import ABC, abstractmethod
 
 from voluptuous import MultipleInvalid
 
-from ..game_model import GameModel, Player
+from ..game_model import GameModel, Player, get_opponent
 from ..networking import wire
 from ..networking.handlers import HandlerSet, handler
 from .websocket import AbstractWSManager, WebsocketConnectionLost
@@ -31,23 +31,16 @@ class SessionState(enum.Enum):
     """State of a client session"""
 
     NEED_JOIN = 'need-join'
+    NEED_JOIN_ACK = 'need-join-ack'
     RUNNING = 'running'
 
 
 class GameState(enum.Enum):
     """State of a server-managed game"""
 
-    JOIN_PENDING_P1 = 'join-pending-player1'
-    JOIN_PENDING_P2 = 'join-pending-player2'
+    JOIN_PENDING = 'join-pending'
     RUNNING = 'running'
     COMPLETED = 'completed'
-
-    @staticmethod
-    def pending_player(player: Player) -> GameState:
-        if player == 1:
-            return GameState.JOIN_PENDING_P1
-        assert player == 2
-        return GameState.JOIN_PENDING_P2
 
 
 class GameMeta:  # pylint: disable=too-few-public-methods
@@ -195,22 +188,32 @@ class OnClientMessage(HandlerSet[wire.ClientMsgType]):
         squares: int = payload['squares_per_row']
         target_len: int = payload['run_to_win']
 
-        state = GameState.pending_player(Player(2) if player == 1 else Player(1))
-
         # TODO: handle validation of relative values of params
         game = GameModel(squares=squares, target_len=target_len)
 
         meta = GameMeta(
-            state=state,
+            state=GameState.JOIN_PENDING,
             player_nonces=(uuid.uuid4(), uuid.uuid4()),
             conn_ids=(conn_id, None) if player == 1 else (None, conn_id),
         )
 
+        session_state, _ = await ctx.redis_store.read_session(conn_id)
+        if session_state != SessionState.NEED_JOIN:
+            await ctx.ws_manager.send_fatal(
+                conn_id,
+                wire.ServerMessage.build(
+                    wire.ServerMsgType.ILLEGAL_MSG,
+                    msg_id=0,  # TODO
+                    error='session is not awaiting join',
+                    err_msg_id=msg_id,
+                ),
+            )
+            return
+
         print('write to redis...')
-        # TODO: validate state transitions?
-        game_key, _ = await asyncio.gather(
-            ctx.redis_store.put_game(game=game, meta=meta),
-            ctx.redis_store.put_session(conn_id, SessionState.RUNNING),
+        game_key = await ctx.redis_store.put_game(game=game, meta=meta)
+        await ctx.redis_store.put_session(
+            conn_id, SessionState.NEED_JOIN_ACK, game_key.bytes
         )
         print('...done')
 
@@ -243,9 +246,31 @@ class OnClientMessage(HandlerSet[wire.ClientMsgType]):
 
         game_id_bytes = uuid.UUID(game_id).bytes
 
-        meta = await ctx.redis_store.read_game_meta(game_id_bytes)
+        session_state, _ = await ctx.redis_store.read_session(conn_id)
+        if session_state != SessionState.NEED_JOIN:
+            await ctx.ws_manager.send_fatal(
+                conn_id,
+                wire.ServerMessage.build(
+                    wire.ServerMsgType.ILLEGAL_MSG,
+                    msg_id=0,  # TODO
+                    error='session is not awaiting join',
+                    err_msg_id=msg_id,
+                ),
+            )
+            return
 
-        if meta.state != GameState.pending_player(player):
+        meta = await ctx.redis_store.read_game_meta(game_id_bytes)
+        prior_conn_id = meta.get_conn_id(player)
+
+        if meta.state != GameState.JOIN_PENDING:
+            has_prior_join = True
+        elif prior_conn_id is not None:
+            prior_session_state = await ctx.redis_store.read_session(prior_conn_id)
+            has_prior_join = prior_session_state != SessionState.NEED_JOIN_ACK
+        else:
+            has_prior_join = False
+
+        if has_prior_join:
             await ctx.ws_manager.send_fatal(
                 conn_id,
                 wire.ServerMessage.build(
@@ -257,13 +282,22 @@ class OnClientMessage(HandlerSet[wire.ClientMsgType]):
             )
             return
 
+        # Clean up any connection which failed to ack its join before this request came in
+        # XXX: I don't really like this racing approach
+        if prior_conn_id is not None:
+            await asyncio.gather(
+                ctx.redis_store.delete_session(prior_conn_id),
+                ctx.ws_manager.close(prior_conn_id),
+            )
+
+        meta = meta.with_state(GameState.RUNNING).with_conn_id(player, conn_id)
+
         # TODO: validate state transitions?
         await asyncio.gather(
-            ctx.redis_store.update_game(
-                game_id_bytes,
-                meta=meta.with_state(GameState.RUNNING).with_conn_id(player, conn_id),
+            ctx.redis_store.update_game(game_id_bytes, meta=meta),
+            ctx.redis_store.put_session(
+                conn_id, SessionState.NEED_JOIN_ACK, game_id_bytes
             ),
-            ctx.redis_store.put_session(conn_id, SessionState.RUNNING),
         )
 
         # XXX: org?
@@ -284,16 +318,69 @@ class OnClientMessage(HandlerSet[wire.ClientMsgType]):
             )
         except WebsocketConnectionLost:
             # Roll back game updates...
-            rollback_state = GameState.pending_player(player)
+            meta = meta.with_state(GameState.JOIN_PENDING).with_conn_id(player, None)
             await asyncio.gather(
                 ctx.redis_store.delete_session(conn_id),
-                ctx.redis_store.update_game(
-                    game_id_bytes,
-                    meta=meta.with_state(rollback_state).with_conn_id(player, None),
-                ),
+                ctx.redis_store.update_game(game_id_bytes, meta=meta),
             )
 
-        # TODO: broadcast updated game state
+    @handler(wire.ClientMsgType.ACK_GAME_JOINED)
+    @staticmethod
+    async def on_ack_game_joined(
+        *, ctx: ServerCtx, conn_id: str, msg_id: int, payload: dict
+    ):
+        session_state, game_id = await ctx.redis_store.read_session(conn_id)
+        if session_state != SessionState.NEED_JOIN_ACK:
+            await ctx.ws_manager.send_fatal(
+                conn_id,
+                wire.ServerMessage.build(
+                    wire.ServerMsgType.ILLEGAL_MSG,
+                    msg_id=0,  # FIXME
+                    error='unexpected ack_game_joined',
+                    err_msg_id=msg_id,
+                ),
+            )
+            await ctx.redis_store.delete_session(conn_id)
+            return
+
+        assert game_id is not None
+        meta = await ctx.redis_store.read_game_meta(game_id)
+
+        for player in [Player(1), Player(2)]:
+            if meta.get_conn_id(player) == conn_id:
+                break
+        else:
+            # shouldn't happen?
+            await ctx.ws_manager.send_fatal(
+                conn_id,
+                wire.ServerMessage.build(
+                    wire.ServerMsgType.ILLEGAL_MSG,
+                    msg_id=0,  # FIXME
+                    error='game cleared',
+                    err_msg_id=msg_id,
+                ),
+            )
+            await ctx.redis_store.delete_session(conn_id)
+            return
+
+        await ctx.redis_store.put_session(
+            conn_id, state=SessionState.RUNNING, game_id=game_id
+        )
+
+        other_conn = meta.get_conn_id(get_opponent(player))
+
+        if other_conn is None:
+            all_joined = False
+        else:
+            other_state, _ = await ctx.redis_store.read_session(other_conn)
+            all_joined = other_state == SessionState.RUNNING
+
+        if all_joined:
+            meta = meta.with_state(GameState.RUNNING)
+            await ctx.redis_store.update_game(game_id, meta=meta)
+
+            _, game = await ctx.redis_store.read_game(game_id)
+            await broadcast_game_state(ctx, meta, game)
 
     @handler(wire.ClientMsgType.REJOIN_GAME)
     @staticmethod
@@ -307,6 +394,26 @@ class OnClientMessage(HandlerSet[wire.ClientMsgType]):
     #     pass
 
 
+async def broadcast_game_state(ctx: ServerCtx, meta: GameMeta, game: GameModel) -> None:
+    tasks = []
+    for conn_id in meta.conn_ids:
+        if conn_id is None:
+            continue
+        # FIXME: close handling
+        tasks.append(
+            ctx.ws_manager.send(
+                conn_id,
+                wire.ServerMessage.build(
+                    wire.ServerMsgType.MOVE_PENDING,
+                    msg_id=0,  # TODO
+                    player=game.player,
+                ),
+            )
+        )
+
+    await asyncio.gather(*tasks)
+
+
 #
 # REDIS INTERFACE
 #
@@ -314,12 +421,14 @@ class OnClientMessage(HandlerSet[wire.ClientMsgType]):
 
 class AbstractRedisStore(ABC):
     @abstractmethod
-    async def put_session(self, conn_id: str, state: SessionState) -> None:
+    async def put_session(
+        self, conn_id: str, state: SessionState, game_id: Optional[bytes] = None
+    ) -> None:
         """Write a new session into Redis"""
         raise NotImplementedError
 
     @abstractmethod
-    async def read_session(self, conn_id: str) -> SessionState:
+    async def read_session(self, conn_id: str) -> Tuple[SessionState, Optional[bytes]]:
         """Read the state of a session from Redis"""
         raise NotImplementedError
 
