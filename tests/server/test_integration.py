@@ -9,6 +9,7 @@ from typing import Dict
 import json
 import asyncio
 
+from structlog import get_logger
 import pytest
 
 from tact.game_model import Player
@@ -22,6 +23,9 @@ from tests.server.test_redis_store import (  # pylint: disable=unused-import
     redis_test_db_init,
     store,
 )
+
+
+logger = get_logger()  # pylint: disable=invalid-name
 
 
 @pytest.mark.asyncio
@@ -191,7 +195,10 @@ class InMemoryWSClient:
 
     async def handle(self, msg: str):
         parsed = wire.ServerMessage.parse(json.loads(msg))
-        print(parsed)
+
+        msg_type, msg_id, _payload = parsed
+        logger.msg('parsed', msg_type=msg_type, msg_id=msg_id)
+
         await self._inbound.put(parsed)
 
     async def recv(self):
