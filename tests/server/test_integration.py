@@ -127,6 +127,91 @@ async def _try_illegal_join_post_ack(
 
 
 @pytest.mark.asyncio
+async def test_rejoin_prior_game_running(
+    store: RedisStore
+):  # pylint: disable=redefined-outer-name
+    mgr = InMemoryWSManager()
+    ctx = server.ServerCtx(redis_store=store, ws_manager=mgr)
+
+    # Setup: client 1 starts new game
+    client1a = await mgr.open(ctx)
+
+    await client1a.send(
+        ctx, wire.ClientMsgType.NEW_GAME, player=1, squares_per_row=8, run_to_win=5
+    )
+    _, _, payload = await client1a.assert_recv(wire.ServerMsgType.GAME_JOINED)
+    game_id = payload['game_id']
+    player_nonce = payload['player_nonce']
+
+    await client1a.send(ctx, wire.ClientMsgType.ACK_GAME_JOINED)
+
+    # Client 1 reconnects over a new session
+    client1b = await mgr.open(ctx)
+    await client1b.send(
+        ctx,
+        wire.ClientMsgType.REJOIN_GAME,
+        game_id=game_id,
+        player=1,
+        player_nonce=str(player_nonce),
+    )
+
+    assert client1a.closed
+
+    # Client 2 joins
+    client2 = await mgr.open(ctx)
+    await client2.send(ctx, wire.ClientMsgType.JOIN_GAME, game_id=game_id, player=2)
+    await client2.assert_recv(wire.ServerMsgType.GAME_JOINED)
+    await client2.send(ctx, wire.ClientMsgType.ACK_GAME_JOINED)
+
+    # Verify that game advances
+    await client1b.assert_recv(wire.ServerMsgType.MOVE_PENDING)
+    await client2.assert_recv(wire.ServerMsgType.MOVE_PENDING)
+
+
+@pytest.mark.asyncio
+async def test_rejoin_after_game_start(
+    store: RedisStore
+):  # pylint: disable=redefined-outer-name
+    mgr = InMemoryWSManager()
+    ctx = server.ServerCtx(redis_store=store, ws_manager=mgr)
+
+    # Setup: client 1 starts new game
+    client1a = await mgr.open(ctx)
+
+    await client1a.send(
+        ctx, wire.ClientMsgType.NEW_GAME, player=1, squares_per_row=8, run_to_win=5
+    )
+    _, _, payload = await client1a.assert_recv(wire.ServerMsgType.GAME_JOINED)
+    game_id = payload['game_id']
+    player_nonce = payload['player_nonce']
+
+    await client1a.send(ctx, wire.ClientMsgType.ACK_GAME_JOINED)
+
+    # Client 2 joins
+    client2 = await mgr.open(ctx)
+    await client2.send(ctx, wire.ClientMsgType.JOIN_GAME, game_id=game_id, player=2)
+    await client2.assert_recv(wire.ServerMsgType.GAME_JOINED)
+    await client2.send(ctx, wire.ClientMsgType.ACK_GAME_JOINED)
+
+    # Verify that game advances
+    await client1a.assert_recv(wire.ServerMsgType.MOVE_PENDING)
+    await client2.assert_recv(wire.ServerMsgType.MOVE_PENDING)
+
+    # Client 1 reconnects over a new session
+    client1b = await mgr.open(ctx)
+    await client1b.send(
+        ctx,
+        wire.ClientMsgType.REJOIN_GAME,
+        game_id=game_id,
+        player=1,
+        player_nonce=str(player_nonce),
+    )
+
+    assert client1a.closed
+    await client1b.assert_recv(wire.ServerMsgType.MOVE_PENDING)
+
+
+@pytest.mark.asyncio
 async def test_simple_game(store: RedisStore):  # pylint: disable=redefined-outer-name
     mgr = InMemoryWSManager()
     ctx = server.ServerCtx(redis_store=store, ws_manager=mgr)
@@ -187,6 +272,14 @@ class InMemoryWSClient:
 
         mgr: InMemoryWSManager = ctx.ws_manager
 
+        logger.msg(
+            'InMemoryWSClient: send',
+            conn_id=self.conn_id,
+            msg_type=msg_type.value,
+            msg_id=msg_id,
+            payload=payload,
+        )
+
         await mgr.client_send(
             ctx,
             self.conn_id,
@@ -196,8 +289,14 @@ class InMemoryWSClient:
     async def handle(self, msg: str):
         parsed = wire.ServerMessage.parse(json.loads(msg))
 
-        msg_type, msg_id, _payload = parsed
-        logger.msg('parsed', msg_type=msg_type, msg_id=msg_id)
+        msg_type, msg_id, payload = parsed
+        logger.msg(
+            'InMemoryWSClient: parsed',
+            conn_id=self.conn_id,
+            msg_type=msg_type.value,
+            msg_id=msg_id,
+            payload=payload,
+        )
 
         await self._inbound.put(parsed)
 

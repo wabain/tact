@@ -403,7 +403,65 @@ class OnClientMessage(HandlerSet[wire.ClientMsgType]):
     async def on_rejoin_game(
         *, log: Logger, ctx: ServerCtx, conn_id: str, msg_id: int, payload: dict
     ):
-        raise NotImplementedError('on rejoin game')
+        game_id = payload['game_id']
+        player = payload['player']
+        player_nonce = payload['player_nonce']
+
+        game_id_bytes = uuid.UUID(game_id).bytes
+
+        session_state, game_id = await ctx.redis_store.read_session(conn_id)
+
+        if session_state != SessionState.NEED_JOIN:
+            log.msg('unexpected session state', session_state=session_state.value)
+
+            await ctx.ws_manager.send_fatal(
+                conn_id,
+                wire.ServerMessage.build(
+                    wire.ServerMsgType.ILLEGAL_MSG,
+                    msg_id=0,  # TODO
+                    error='session is not awaiting join',
+                    err_msg_id=msg_id,
+                ),
+            )
+            return
+
+        meta = await ctx.redis_store.read_game_meta(game_id_bytes)
+
+        if not await validate_rejoin_request(
+            ctx, log, player=player, declared_nonce=player_nonce, meta=meta
+        ):
+            return
+
+        if meta.state == GameState.RUNNING:
+            _, game = await ctx.redis_store.read_game(game_id_bytes)
+
+            try:
+                await ctx.ws_manager.send(
+                    conn_id,
+                    wire.ServerMessage.build(
+                        wire.ServerMsgType.MOVE_PENDING,
+                        msg_id=0,  # TODO
+                        player=game.player,
+                    ),
+                )
+            except WebsocketConnectionLost:
+                log.msg('connection lost')
+
+                meta = meta.with_conn_id(player, None)
+                await asyncio.gather(
+                    ctx.redis_store.delete_session(conn_id),
+                    ctx.redis_store.update_game(game_id_bytes, meta=meta),
+                )
+                return
+
+        await asyncio.gather(
+            ctx.redis_store.put_session(
+                conn_id, state=SessionState.RUNNING, game_id=game_id
+            ),
+            ctx.redis_store.update_game(
+                game_id_bytes, meta=meta.with_conn_id(player, conn_id)
+            ),
+        )
 
     # @handler(wire.ClientMsgType.NEW_MOVE)
     # async def on_new_move(*, log: Logger, ctx: ServerCtx, conn_id: str, payload: dict):
@@ -442,6 +500,28 @@ async def validate_join_request(
         prior_session_state=prior_session_state.value,
     )
     return False
+
+
+async def validate_rejoin_request(
+    ctx: ServerCtx, log: Logger, player: Player, declared_nonce: str, meta: GameMeta
+) -> bool:
+    if meta.get_player_nonce(player) != declared_nonce:
+        log.msg('incorrect nonce')
+        return False
+
+    prior_conn_id = meta.get_conn_id(player)
+
+    if prior_conn_id is not None:
+        # Clean up any connection which failed to ack its join before this request came in
+        # FIXME: I don't really like this racing approach
+        log.msg('tearing down prior connection', prior_conn_id=prior_conn_id)
+
+        await asyncio.gather(
+            ctx.redis_store.delete_session(prior_conn_id),
+            ctx.ws_manager.close(prior_conn_id),
+        )
+
+    return True
 
 
 async def broadcast_game_state(ctx: ServerCtx, meta: GameMeta, game: GameModel) -> None:
