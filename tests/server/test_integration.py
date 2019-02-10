@@ -8,6 +8,7 @@ from __future__ import annotations
 from typing import Dict
 import json
 import asyncio
+from itertools import cycle
 
 from structlog import get_logger
 import pytest
@@ -220,33 +221,67 @@ async def test_simple_game(store: RedisStore):  # pylint: disable=redefined-oute
     client2 = await mgr.open(ctx)
 
     await client1.send(
-        ctx, wire.ClientMsgType.NEW_GAME, player=1, squares_per_row=8, run_to_win=5
+        ctx, wire.ClientMsgType.NEW_GAME, player=1, squares_per_row=3, run_to_win=3
     )
 
     _, _, payload = await client1.assert_recv(wire.ServerMsgType.GAME_JOINED, msg_id=0)
 
     assert payload['player'] == 1
-    assert payload['squares_per_row'] == 8
-    assert payload['run_to_win'] == 5
+    assert payload['squares_per_row'] == 3
+    assert payload['run_to_win'] == 3
 
     game_id = payload['game_id']
-    _p1_nonce = payload['player_nonce']
 
     await client2.send(ctx, wire.ClientMsgType.JOIN_GAME, game_id=game_id, player=2)
 
     _, _, payload = await client2.assert_recv(wire.ServerMsgType.GAME_JOINED, msg_id=0)
 
     assert payload['player'] == 2
-    assert payload['squares_per_row'] == 8
-    assert payload['run_to_win'] == 5
-
-    _p2_nonce = payload['player_nonce']
+    assert payload['squares_per_row'] == 3
+    assert payload['run_to_win'] == 3
 
     for client in [client1, client2]:
         await client.send(ctx, wire.ClientMsgType.ACK_GAME_JOINED)
 
-    for client in [client1, client2]:
-        await client.assert_recv(wire.ServerMsgType.MOVE_PENDING, 0, dict(player=1))
+    await client1.assert_recv(wire.ServerMsgType.MOVE_PENDING, 0, dict(player=1))
+    await client2.assert_recv(wire.ServerMsgType.MOVE_PENDING, 0, dict(player=1))
+
+    moves = [
+        # fmt: off
+        (0, 0),
+        (1, 1),
+
+        (2, 0),
+        (1, 0),
+
+        (1, 2),
+        (2, 1),
+
+        (0, 1),
+        (0, 2),
+    ]
+
+    for i, (client, (x, y)) in enumerate(zip(cycle([client1, client2]), moves)):
+        await client.send(ctx, wire.ClientMsgType.NEW_MOVE, x=x, y=y)
+
+        if i == len(moves) - 1:
+            expected = dict(
+                msg_type=wire.ServerMsgType.GAME_OVER,
+                payload=dict(
+                    winner=None,
+                    is_draw=True,
+                    is_technical_forfeit=False,
+                    is_user_forfeit=False,
+                ),
+            )
+        else:
+            player = 2 if i % 2 == 0 else 1
+            expected = dict(
+                msg_type=wire.ServerMsgType.MOVE_PENDING, payload=dict(player=player)
+            )
+
+        await client1.assert_recv(**expected)
+        await client2.assert_recv(**expected)
 
 
 class InMemoryWSClient:

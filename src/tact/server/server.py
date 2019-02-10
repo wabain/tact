@@ -11,13 +11,20 @@ import json
 import asyncio
 import uuid
 import typing
-from typing import Any, List, Tuple, Optional
+from typing import Any, Dict, List, Tuple, Optional
 from abc import ABC, abstractmethod
 
 from voluptuous import MultipleInvalid
 from structlog import get_logger, BoundLoggerBase as Logger
 
-from ..game_model import GameModel, Player, get_opponent
+from ..game_model import (
+    IllegalMoveException,
+    GameModel,
+    GameStatus,
+    Move,
+    Player,
+    get_opponent,
+)
 from ..networking import wire
 from ..networking.handlers import HandlerSet, handler
 from .websocket import AbstractWSManager, WebsocketConnectionLost
@@ -47,7 +54,7 @@ class GameState(enum.Enum):
     COMPLETED = 'completed'
 
 
-class GameMeta:  # pylint: disable=too-few-public-methods
+class GameMeta:
     """Metadata associated with a server-managed game"""
 
     def __init__(
@@ -67,6 +74,12 @@ class GameMeta:  # pylint: disable=too-few-public-methods
 
     def get_player_nonce(self, player: Player) -> uuid.UUID:
         return self.player_nonces[0 if player == 1 else 1]
+
+    def get_player_for_conn_id(self, conn_id: str) -> Optional[Player]:
+        for player in [Player(1), Player(2)]:
+            if self.get_conn_id(player) == conn_id:
+                return player
+        return None
 
     def get_conn_id(self, player: Player) -> Optional[str]:
         return self.conn_ids[0 if player == 1 else 1]
@@ -358,13 +371,11 @@ class OnClientMessage(HandlerSet[wire.ClientMsgType]):
         assert game_id is not None
         meta = await ctx.redis_store.read_game_meta(game_id)
 
-        for player in [Player(1), Player(2)]:
-            if meta.get_conn_id(player) == conn_id:
-                break
-        else:
+        player = meta.get_player_for_conn_id(conn_id)
+        if player is None:
             log.msg('connection cleared from game')
 
-            # shouldn't happen?
+            # FIXME: shouldn't happen?
             await ctx.ws_manager.send_fatal(
                 conn_id,
                 wire.ServerMessage.build(
@@ -463,9 +474,63 @@ class OnClientMessage(HandlerSet[wire.ClientMsgType]):
             ),
         )
 
-    # @handler(wire.ClientMsgType.NEW_MOVE)
-    # async def on_new_move(*, log: Logger, ctx: ServerCtx, conn_id: str, payload: dict):
-    #     pass
+    @handler(wire.ClientMsgType.NEW_MOVE)
+    @staticmethod
+    async def on_new_move(
+        *, log: Logger, ctx: ServerCtx, conn_id: str, msg_id: int, payload: dict
+    ) -> None:
+        session_state, game_id = await ctx.redis_store.read_session(conn_id)
+
+        if session_state != SessionState.RUNNING:
+            # TODO: disconnect
+            await ctx.ws_manager.send_fatal(
+                conn_id,
+                wire.ServerMessage.build(
+                    wire.ServerMsgType.ILLEGAL_MSG,
+                    msg_id=0,  # FIXME
+                    error='',
+                    err_msg_id=msg_id,
+                ),
+            )
+            return
+
+        if game_id is None:
+            raise RuntimeError('No game associated with session in running state')
+
+        meta, (_, game) = await asyncio.gather(
+            ctx.redis_store.read_game_meta(game_id), ctx.redis_store.read_game(game_id)
+        )
+
+        player = meta.get_player_for_conn_id(conn_id)
+
+        if player is None:
+            log.msg('Connection cleared from game state')
+            await ctx.ws_manager.close(conn_id)
+            return
+
+        try:
+            coords = payload['x'], payload['y']
+            move = Move(player=player, coords=coords)
+            game.apply_move(move)
+
+        except IllegalMoveException as exc:
+            await ctx.ws_manager.send_fatal(
+                conn_id,
+                wire.ServerMessage.build(
+                    wire.ServerMsgType.ILLEGAL_MOVE,
+                    msg_id=0,  # FIXME(msg_id)
+                    error=str(exc),
+                ),
+            )
+
+            # TODO: update game state
+            return
+
+        if game.status() != GameStatus.Ongoing:
+            meta = meta.with_state(GameState.COMPLETED)
+
+        await ctx.redis_store.update_game(game_id, meta=meta, game=game)
+        await broadcast_game_state(ctx, meta=meta, game=game)
 
 
 async def validate_join_request(
@@ -526,20 +591,30 @@ async def validate_rejoin_request(
 
 async def broadcast_game_state(ctx: ServerCtx, meta: GameMeta, game: GameModel) -> None:
     tasks = []
+
+    status = game.status()
+
+    payload: Dict[str, Any]
+
+    if status == GameStatus.Ongoing:
+        msg_type = wire.ServerMsgType.MOVE_PENDING
+        payload = dict(player=game.player)
+    else:
+        msg_type = wire.ServerMsgType.GAME_OVER
+        payload = dict(
+            winner=status.winner,
+            is_draw=status == GameStatus.Drawn,
+            is_technical_forfeit=False,
+            is_user_forfeit=False,
+        )
+
     for conn_id in meta.conn_ids:
         if conn_id is None:
             continue
+
         # FIXME: close handling
-        tasks.append(
-            ctx.ws_manager.send(
-                conn_id,
-                wire.ServerMessage.build(
-                    wire.ServerMsgType.MOVE_PENDING,
-                    msg_id=0,  # TODO
-                    player=game.player,
-                ),
-            )
-        )
+        msg = wire.ServerMessage.build(msg_type, msg_id=0, **payload)  # TODO(msg-id)
+        tasks.append(ctx.ws_manager.send(conn_id, msg))
 
     await asyncio.gather(*tasks)
 

@@ -29,6 +29,7 @@ class ClientMsgType(enum.Enum):
     JOIN_GAME = 'join_game'
     ACK_GAME_JOINED = 'ack_game_joined'
     REJOIN_GAME = 'rejoin_game'
+    NEW_MOVE = 'new_move'
 
 
 class ServerMsgType(enum.Enum):
@@ -84,6 +85,8 @@ rejoin_game_schema = Schema(
     required=True,
 )
 
+new_move_schema = Schema({'x': int, 'y': int}, required=True)
+
 client_msg_schema = All(
     Schema(
         {
@@ -100,6 +103,7 @@ client_msg_schema = All(
         part({'type': 'join_game', 'msg': join_game_schema}),
         part({'type': 'ack_game_joined', 'msg': ack_game_joined_schema}),
         part({'type': 'rejoin_game', 'msg': rejoin_game_schema}),
+        part({'type': 'new_move', 'msg': new_move_schema}),
     ),
 )
 

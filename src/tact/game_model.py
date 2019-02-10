@@ -20,6 +20,12 @@ class GameStatus(Enum):
     PlayerOneWins = 1
     PlayerTwoWins = 2
 
+    @property
+    def winner(self) -> Optional[Player]:
+        if self.value in (1, 2):
+            return Player(self.value)
+        return None
+
 
 class Move:  # pylint: disable=too-few-public-methods
     def __init__(self, player: Player, coords: Tuple[int, int]) -> None:
