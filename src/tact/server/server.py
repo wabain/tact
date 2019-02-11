@@ -160,12 +160,7 @@ async def new_message(ctx: ServerCtx, conn_id: str, msg_src: str) -> None:
 
     # Filling in the generic type via inheritance in OnClientMessage doesn't
     # seem to be working - https://github.com/python/mypy/issues/1337 ?
-    #
-    # This cast makes the code typecheck with mypy 0.650, but it doesn't seem
-    # to actually validate the msg_type argument.
-    dispatch = typing.cast(
-        'HandlerSet[wire.ClientMsgType].dispatch', OnClientMessage.dispatch
-    )
+    dispatch = typing.cast('HandlerSet[wire.ClientMsgType]', OnClientMessage).dispatch
     await dispatch(
         msg_type, log=log, ctx=ctx, conn_id=conn_id, msg_id=msg_id, payload=payload
     )
