@@ -121,7 +121,13 @@ game_joined_schema = Schema(
     }
 )
 
-move_pending_schema = Schema({'player': PlayerID}, required=True)
+move_pending_schema = Schema(
+    {
+        'player': PlayerID,
+        'last_move': Any({'x': int, 'y': int, 'player': PlayerID}, None),
+    },
+    required=True,
+)
 
 illegal_move_schema = Schema({'error': str}, required=True)
 

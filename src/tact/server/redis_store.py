@@ -14,7 +14,7 @@ from .import_util import try_server_imports
 with try_server_imports():
     import aioredis
 
-from ..game_model import GameModel, Player
+from ..game_model import GameModel, Move, Player
 from .server import SessionState, GameState, GameMeta, AbstractRedisStore
 
 
@@ -131,7 +131,13 @@ class RedisStore(AbstractRedisStore):
     async def read_game_meta(self, key: bytes) -> GameMeta:
         redis = await self.get_pool()
         out: Tuple[Optional[bytes], ...] = await redis.hmget(
-            key, 'state', 'nonce.p1', 'nonce.p2', 'conn_id.p1', 'conn_id.p2'
+            key,
+            'state',
+            'nonce.p1',
+            'nonce.p2',
+            'conn_id.p1',
+            'conn_id.p2',
+            'last_move',
         )
 
         if any(v is None for v in out):
@@ -139,7 +145,7 @@ class RedisStore(AbstractRedisStore):
                 f'Failed to read desired keys for game {uuid.UUID(bytes=key)}'
             )
 
-        state, nonce_p1, nonce_p2, conn_id_p1, conn_id_p2 = typing.cast(
+        state, nonce_p1, nonce_p2, conn_id_p1, conn_id_p2, last_move = typing.cast(
             Tuple[bytes, ...], out
         )
         return decode_game_meta(
@@ -148,6 +154,7 @@ class RedisStore(AbstractRedisStore):
             nonce_p2=nonce_p2,
             conn_id_p1=conn_id_p1.decode(),
             conn_id_p2=conn_id_p2.decode(),
+            last_move=last_move.decode(),
         )
 
     async def delete_game(self, key: bytes):
@@ -200,16 +207,33 @@ def encode_game_meta(meta: GameMeta) -> dict:
         'nonce.p2': meta.player_nonces[1].bytes,
         'conn_id.p1': meta.conn_ids[0] or '',
         'conn_id.p2': meta.conn_ids[1] or '',
+        'last_move': json.dumps(meta.get_last_move_json()),
     }
 
 
 def decode_game_meta(
-    *, state: str, nonce_p1: bytes, nonce_p2: bytes, conn_id_p1: str, conn_id_p2: str
+    *,
+    state: str,
+    nonce_p1: bytes,
+    nonce_p2: bytes,
+    conn_id_p1: str,
+    conn_id_p2: str,
+    last_move: str,
 ) -> GameMeta:
+    last_move_json = json.loads(last_move)
+    if last_move_json is None:
+        last_move_deserialized = None
+    else:
+        last_move_deserialized = Move(
+            coords=(last_move_json['x'], last_move_json['y']),
+            player=Player(last_move_json['player']),
+        )
+
     return GameMeta(
         state=GameState(state),
         player_nonces=(uuid.UUID(bytes=nonce_p1), uuid.UUID(bytes=nonce_p2)),
         conn_ids=(conn_id_p1 or None, conn_id_p2 or None),
+        last_move=last_move_deserialized,
     )
 
 

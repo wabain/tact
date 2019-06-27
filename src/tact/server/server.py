@@ -62,15 +62,26 @@ class GameMeta:
         state: GameState,
         player_nonces: Tuple[uuid.UUID, uuid.UUID],
         conn_ids: Tuple[Optional[str], Optional[str]],
+        last_move: Optional[Move] = None,
     ) -> None:
         self.state = state
         self.player_nonces = player_nonces
         self.conn_ids = conn_ids
+        self.last_move = last_move
+
+    # TODO: In future, could use TypedDict instead of Any
+    def _with_override(self, **args: Any) -> GameMeta:
+        args = {
+            'state': self.state,
+            'player_nonces': self.player_nonces,
+            'conn_ids': self.conn_ids,
+            'last_move': self.last_move,
+            **args,
+        }
+        return GameMeta(**args)
 
     def with_state(self, state: GameState) -> GameMeta:
-        return GameMeta(
-            state=state, player_nonces=self.player_nonces, conn_ids=self.conn_ids
-        )
+        return self._with_override(state=state)
 
     def get_player_nonce(self, player: Player) -> uuid.UUID:
         return self.player_nonces[0 if player == 1 else 1]
@@ -86,13 +97,26 @@ class GameMeta:
 
     def with_conn_id(self, player: Player, conn_id: Optional[str]) -> GameMeta:
         cid1, cid2 = self.conn_ids
+
         if player == 1:
             cid1 = conn_id
         else:
             cid2 = conn_id
-        return GameMeta(
-            state=self.state, player_nonces=self.player_nonces, conn_ids=(cid1, cid2)
-        )
+
+        return self._with_override(conn_ids=(cid1, cid2))
+
+    def get_last_move_json(self) -> Optional[Dict[str, Any]]:
+        if self.last_move is None:
+            return None
+
+        return {
+            'x': self.last_move.x,
+            'y': self.last_move.y,
+            'player': self.last_move.player,
+        }
+
+    def with_last_move(self, move: Optional[Move]) -> GameMeta:
+        return self._with_override(last_move=move)
 
 
 class ServerCtx:  # pylint: disable=too-few-public-methods
@@ -220,6 +244,7 @@ class OnClientMessage(HandlerSet[wire.ClientMsgType]):
             state=GameState.JOIN_PENDING,
             player_nonces=(uuid.uuid4(), uuid.uuid4()),
             conn_ids=(conn_id, None) if player == 1 else (None, conn_id),
+            last_move=None,
         )
 
         session_state, _ = await ctx.redis_store.read_session(conn_id)
@@ -448,6 +473,7 @@ class OnClientMessage(HandlerSet[wire.ClientMsgType]):
                         wire.ServerMsgType.MOVE_PENDING,
                         msg_id=0,  # TODO
                         player=game.player,
+                        last_move=meta.get_last_move_json(),
                     ),
                 )
             except WebsocketConnectionLost:
@@ -521,6 +547,8 @@ class OnClientMessage(HandlerSet[wire.ClientMsgType]):
             # TODO: update game state
             return
 
+        meta = meta.with_last_move(move)
+
         if game.status() != GameStatus.Ongoing:
             meta = meta.with_state(GameState.COMPLETED)
 
@@ -593,7 +621,7 @@ async def broadcast_game_state(ctx: ServerCtx, meta: GameMeta, game: GameModel) 
 
     if status == GameStatus.Ongoing:
         msg_type = wire.ServerMsgType.MOVE_PENDING
-        payload = dict(player=game.player)
+        payload = dict(player=game.player, last_move=meta.get_last_move_json())
     else:
         msg_type = wire.ServerMsgType.GAME_OVER
         payload = dict(

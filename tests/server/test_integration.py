@@ -13,7 +13,7 @@ from itertools import cycle
 from structlog import get_logger
 import pytest
 
-from tact.game_model import Player
+from tact.game_model import Player, get_opponent
 from tact.networking import wire
 from tact.server import server
 from tact.server.redis_store import RedisStore
@@ -68,8 +68,12 @@ async def test_multi_join_pre_ack(
     await client2b.send(ctx, wire.ClientMsgType.ACK_GAME_JOINED)
     await client1.send(ctx, wire.ClientMsgType.ACK_GAME_JOINED)
 
-    await client1.assert_recv(wire.ServerMsgType.MOVE_PENDING, payload=dict(player=1))
-    await client2b.assert_recv(wire.ServerMsgType.MOVE_PENDING, payload=dict(player=1))
+    await client1.assert_recv(
+        wire.ServerMsgType.MOVE_PENDING, payload=dict(player=1, last_move=None)
+    )
+    await client2b.assert_recv(
+        wire.ServerMsgType.MOVE_PENDING, payload=dict(player=1, last_move=None)
+    )
 
 
 @pytest.mark.asyncio
@@ -104,8 +108,12 @@ async def test_multi_join_post_ack(
     # Client 1 acks the join, and the game can begin
     await client1.send(ctx, wire.ClientMsgType.ACK_GAME_JOINED)
 
-    await client1.assert_recv(wire.ServerMsgType.MOVE_PENDING, payload=dict(player=1))
-    await client2a.assert_recv(wire.ServerMsgType.MOVE_PENDING, payload=dict(player=1))
+    await client1.assert_recv(
+        wire.ServerMsgType.MOVE_PENDING, payload=dict(player=1, last_move=None)
+    )
+    await client2a.assert_recv(
+        wire.ServerMsgType.MOVE_PENDING, payload=dict(player=1, last_move=None)
+    )
 
     # Another client instance tries to join, with the game running
     await _try_illegal_join_post_ack(ctx, game_id=game_id, player=Player(2))
@@ -243,8 +251,10 @@ async def test_simple_game(store: RedisStore):  # pylint: disable=redefined-oute
     for client in [client1, client2]:
         await client.send(ctx, wire.ClientMsgType.ACK_GAME_JOINED)
 
-    await client1.assert_recv(wire.ServerMsgType.MOVE_PENDING, 0, dict(player=1))
-    await client2.assert_recv(wire.ServerMsgType.MOVE_PENDING, 0, dict(player=1))
+    for client in [client1, client2]:
+        await client.assert_recv(
+            wire.ServerMsgType.MOVE_PENDING, 0, dict(player=1, last_move=None)
+        )
 
     moves = [
         # fmt: off
@@ -277,7 +287,10 @@ async def test_simple_game(store: RedisStore):  # pylint: disable=redefined-oute
         else:
             player = 2 if i % 2 == 0 else 1
             expected = dict(
-                msg_type=wire.ServerMsgType.MOVE_PENDING, payload=dict(player=player)
+                msg_type=wire.ServerMsgType.MOVE_PENDING,
+                payload=dict(
+                    player=player, last_move=dict(x=x, y=y, player=get_opponent(player))
+                ),
             )
 
         await client1.assert_recv(**expected)

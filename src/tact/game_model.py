@@ -32,6 +32,14 @@ class Move:  # pylint: disable=too-few-public-methods
         self.player = player
         self.coords = coords
 
+    @property
+    def x(self):
+        return self.coords[0]
+
+    @property
+    def y(self):
+        return self.coords[1]
+
     def __repr__(self):
         return f'{type(self).__name__}(player={self.player}, coords={self.coords})'
 
