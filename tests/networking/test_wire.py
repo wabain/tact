@@ -58,12 +58,14 @@ def test_server_message_parse():
 
 def test_server_message_parse_invalid_payload():
     with fails_validation_against_paths([['msg', 'nonce']]):
-        ServerMessage.parse(dict(SERVER_MSG, msg=dict(SERVER_MSG['msg'], nonce='100')))
+        ServerMessage.parse(
+            {**SERVER_MSG, 'msg': {**SERVER_MSG['msg'], 'nonce': '100'}}
+        )
 
 
 def test_server_message_parse_invalid_version():
     with fails_validation_against_paths([['version']]):
-        ServerMessage.parse(dict(SERVER_MSG, version='3.5'))
+        ServerMessage.parse({**SERVER_MSG, 'version': '3.5'})
 
 
 def test_client_message_build():
@@ -93,7 +95,7 @@ def test_client_message_parse():
 
 def test_client_message_parse_invalid_payload():
     with fails_validation_against_paths([['msg', 'player']]):
-        ClientMessage.parse(dict(CLIENT_MSG, msg=dict(CLIENT_MSG['msg'], player=20)))
+        ClientMessage.parse({**CLIENT_MSG, 'msg': {**CLIENT_MSG['msg'], 'player': 20}})
 
 
 def test_client_message_parse_invalid_version():
@@ -101,7 +103,7 @@ def test_client_message_parse_invalid_version():
 
     with pytest.raises(voluptuous.MultipleInvalid):
         try:
-            ClientMessage.parse(dict(CLIENT_MSG, version='3.5'))
+            ClientMessage.parse({**CLIENT_MSG, 'version': '3.5'})
         except voluptuous.MultipleInvalid as exc:
             errs = exc.errors
             raise

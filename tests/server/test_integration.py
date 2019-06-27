@@ -69,10 +69,10 @@ async def test_multi_join_pre_ack(
     await client1.send(ctx, wire.ClientMsgType.ACK_GAME_JOINED)
 
     await client1.assert_recv(
-        wire.ServerMsgType.MOVE_PENDING, payload=dict(player=1, last_move=None)
+        wire.ServerMsgType.MOVE_PENDING, payload={'player': 1, 'last_move': None}
     )
     await client2b.assert_recv(
-        wire.ServerMsgType.MOVE_PENDING, payload=dict(player=1, last_move=None)
+        wire.ServerMsgType.MOVE_PENDING, payload={'player': 1, 'last_move': None}
     )
 
 
@@ -109,10 +109,10 @@ async def test_multi_join_post_ack(
     await client1.send(ctx, wire.ClientMsgType.ACK_GAME_JOINED)
 
     await client1.assert_recv(
-        wire.ServerMsgType.MOVE_PENDING, payload=dict(player=1, last_move=None)
+        wire.ServerMsgType.MOVE_PENDING, payload={'player': 1, 'last_move': None}
     )
     await client2a.assert_recv(
-        wire.ServerMsgType.MOVE_PENDING, payload=dict(player=1, last_move=None)
+        wire.ServerMsgType.MOVE_PENDING, payload={'player': 1, 'last_move': None}
     )
 
     # Another client instance tries to join, with the game running
@@ -128,9 +128,10 @@ async def _try_illegal_join_post_ack(
     await client.send(ctx, wire.ClientMsgType.JOIN_GAME, game_id=game_id, player=player)
     await client.assert_recv(
         wire.ServerMsgType.ILLEGAL_MSG,
-        payload=dict(
-            error='player has already been claimed', err_msg_id=illegal_join_msg_id
-        ),
+        payload={
+            'error': 'player has already been claimed',
+            'err_msg_id': illegal_join_msg_id,
+        },
     )
     assert client.closed
 
@@ -253,7 +254,7 @@ async def test_simple_game(store: RedisStore):  # pylint: disable=redefined-oute
 
     for client in [client1, client2]:
         await client.assert_recv(
-            wire.ServerMsgType.MOVE_PENDING, 0, dict(player=1, last_move=None)
+            wire.ServerMsgType.MOVE_PENDING, 0, {'player': 1, 'last_move': None}
         )
 
     moves = [
@@ -275,23 +276,24 @@ async def test_simple_game(store: RedisStore):  # pylint: disable=redefined-oute
         await client.send(ctx, wire.ClientMsgType.NEW_MOVE, x=x, y=y)
 
         if i == len(moves) - 1:
-            expected = dict(
-                msg_type=wire.ServerMsgType.GAME_OVER,
-                payload=dict(
-                    winner=None,
-                    is_draw=True,
-                    is_technical_forfeit=False,
-                    is_user_forfeit=False,
-                ),
-            )
+            expected = {
+                'msg_type': wire.ServerMsgType.GAME_OVER,
+                'payload': {
+                    'winner': None,
+                    'is_draw': True,
+                    'is_technical_forfeit': False,
+                    'is_user_forfeit': False,
+                },
+            }
         else:
             player = 2 if i % 2 == 0 else 1
-            expected = dict(
-                msg_type=wire.ServerMsgType.MOVE_PENDING,
-                payload=dict(
-                    player=player, last_move=dict(x=x, y=y, player=get_opponent(player))
-                ),
-            )
+            expected = {
+                'msg_type': wire.ServerMsgType.MOVE_PENDING,
+                'payload': {
+                    'player': player,
+                    'last_move': {'x': x, 'y': y, 'player': get_opponent(player)},
+                },
+            }
 
         await client1.assert_recv(**expected)
         await client2.assert_recv(**expected)

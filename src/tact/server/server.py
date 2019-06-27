@@ -621,15 +621,15 @@ async def broadcast_game_state(ctx: ServerCtx, meta: GameMeta, game: GameModel) 
 
     if status == GameStatus.Ongoing:
         msg_type = wire.ServerMsgType.MOVE_PENDING
-        payload = dict(player=game.player, last_move=meta.get_last_move_json())
+        payload = {'player': game.player, 'last_move': meta.get_last_move_json()}
     else:
         msg_type = wire.ServerMsgType.GAME_OVER
-        payload = dict(
-            winner=status.winner,
-            is_draw=status == GameStatus.Drawn,
-            is_technical_forfeit=False,
-            is_user_forfeit=False,
-        )
+        payload = {
+            'winner': status.winner,
+            'is_draw': status == GameStatus.Drawn,
+            'is_technical_forfeit': False,
+            'is_user_forfeit': False,
+        }
 
     for conn_id in meta.conn_ids:
         if conn_id is None:
