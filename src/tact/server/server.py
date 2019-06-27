@@ -126,6 +126,27 @@ class ServerCtx:  # pylint: disable=too-few-public-methods
         self.redis_store = redis_store
         self.ws_manager = ws_manager
 
+    async def send(self, conn_id: str, msg_type: wire.ServerMsgType, **payload: Any):
+        await self.ws_manager.send(
+            conn_id,
+            wire.ServerMessage.build(msg_type, msg_id=0, **payload),  # TODO(msg-id)
+        )
+
+    async def send_fatal(
+        self, conn_id: str, msg_type: wire.ServerMsgType, **payload: Any
+    ):
+        """Send a final message over a connection and then close it
+
+        Does not issue an error if the connection turns out to have already
+        been closed.
+        """
+        try:
+            await self.send(conn_id, msg_type, **payload)
+        except WebsocketConnectionLost:
+            return
+
+        await self.ws_manager.close(conn_id)
+
 
 #
 # SERVER HANDLER FUNCTIONS
@@ -145,14 +166,11 @@ async def new_message(ctx: ServerCtx, conn_id: str, msg_src: str) -> None:
     except ValueError:
         log.msg('failed to parse message JSON')
 
-        await ctx.ws_manager.send(
+        await ctx.send(
             conn_id,
-            wire.ServerMessage.build(
-                wire.ServerMsgType.ILLEGAL_MSG,
-                msg_id=0,  # TODO
-                err_msg_id=None,
-                error='failed to parse message',
-            ),
+            wire.ServerMsgType.ILLEGAL_MSG,
+            err_msg_id=None,
+            error='failed to parse message',
         )
 
         return
@@ -166,14 +184,11 @@ async def new_message(ctx: ServerCtx, conn_id: str, msg_src: str) -> None:
 
         log.msg('failed to deserialize message', msg_id=err_msg_id)
 
-        await ctx.ws_manager.send(
+        await ctx.send(
             conn_id,
-            wire.ServerMessage.build(
-                wire.ServerMsgType.ILLEGAL_MSG,
-                msg_id=0,  # TODO
-                err_msg_id=err_msg_id,
-                error=format_validation_error(exc),
-            ),
+            wire.ServerMsgType.ILLEGAL_MSG,
+            err_msg_id=err_msg_id,
+            error=format_validation_error(exc),
         )
 
         return
@@ -251,14 +266,11 @@ class OnClientMessage(HandlerSet[wire.ClientMsgType]):
         if session_state != SessionState.NEED_JOIN:
             log.msg('unexpected session state', session_state=session_state.value)
 
-            await ctx.ws_manager.send_fatal(
+            await ctx.send_fatal(
                 conn_id,
-                wire.ServerMessage.build(
-                    wire.ServerMsgType.ILLEGAL_MSG,
-                    msg_id=0,  # TODO
-                    error='session is not awaiting join',
-                    err_msg_id=msg_id,
-                ),
+                wire.ServerMsgType.ILLEGAL_MSG,
+                error='session is not awaiting join',
+                err_msg_id=msg_id,
             )
             return
 
@@ -268,17 +280,14 @@ class OnClientMessage(HandlerSet[wire.ClientMsgType]):
         )
 
         try:
-            await ctx.ws_manager.send(
+            await ctx.send(
                 conn_id,
-                wire.ServerMessage.build(
-                    wire.ServerMsgType.GAME_JOINED,
-                    msg_id=0,  # TODO
-                    player=player,
-                    squares_per_row=squares,
-                    run_to_win=target_len,
-                    game_id=str(game_key),  # TODO
-                    player_nonce=str(meta.get_player_nonce(player)),
-                ),
+                wire.ServerMsgType.GAME_JOINED,
+                player=player,
+                squares_per_row=squares,
+                run_to_win=target_len,
+                game_id=str(game_key),  # TODO
+                player_nonce=str(meta.get_player_nonce(player)),
             )
         except WebsocketConnectionLost:
             log.msg('connection lost')
@@ -304,14 +313,11 @@ class OnClientMessage(HandlerSet[wire.ClientMsgType]):
         if session_state != SessionState.NEED_JOIN:
             log.msg('unexpected session state', session_state=session_state.value)
 
-            await ctx.ws_manager.send_fatal(
+            await ctx.send_fatal(
                 conn_id,
-                wire.ServerMessage.build(
-                    wire.ServerMsgType.ILLEGAL_MSG,
-                    msg_id=0,  # TODO
-                    error='session is not awaiting join',
-                    err_msg_id=msg_id,
-                ),
+                wire.ServerMsgType.ILLEGAL_MSG,
+                error='session is not awaiting join',
+                err_msg_id=msg_id,
             )
             return
 
@@ -320,14 +326,11 @@ class OnClientMessage(HandlerSet[wire.ClientMsgType]):
         if not await validate_join_request(ctx, log=log, player=player, meta=meta):
             log.msg('player already claimed')
 
-            await ctx.ws_manager.send_fatal(
+            await ctx.send_fatal(
                 conn_id,
-                wire.ServerMessage.build(
-                    wire.ServerMsgType.ILLEGAL_MSG,
-                    msg_id=0,  # FIXME
-                    error='player has already been claimed',
-                    err_msg_id=msg_id,
-                ),
+                wire.ServerMsgType.ILLEGAL_MSG,
+                error='player has already been claimed',
+                err_msg_id=msg_id,
             )
             return
 
@@ -345,17 +348,14 @@ class OnClientMessage(HandlerSet[wire.ClientMsgType]):
         _, game = await ctx.redis_store.read_game(game_id_bytes)
 
         try:
-            await ctx.ws_manager.send(
+            await ctx.send(
                 conn_id,
-                wire.ServerMessage.build(
-                    wire.ServerMsgType.GAME_JOINED,
-                    msg_id=0,  # FIXME
-                    game_id=game_id,
-                    player=player,
-                    player_nonce=str(meta.get_player_nonce(player)),
-                    squares_per_row=game.squares,
-                    run_to_win=game.target_len,
-                ),
+                wire.ServerMsgType.GAME_JOINED,
+                game_id=game_id,
+                player=player,
+                player_nonce=str(meta.get_player_nonce(player)),
+                squares_per_row=game.squares,
+                run_to_win=game.target_len,
             )
         except WebsocketConnectionLost:
             log.msg('connection lost')
@@ -376,14 +376,11 @@ class OnClientMessage(HandlerSet[wire.ClientMsgType]):
         if session_state != SessionState.NEED_JOIN_ACK:
             log.msg('unexpected session state', session_state=session_state.value)
 
-            await ctx.ws_manager.send_fatal(
+            await ctx.send_fatal(
                 conn_id,
-                wire.ServerMessage.build(
-                    wire.ServerMsgType.ILLEGAL_MSG,
-                    msg_id=0,  # FIXME
-                    error='unexpected ack_game_joined',
-                    err_msg_id=msg_id,
-                ),
+                wire.ServerMsgType.ILLEGAL_MSG,
+                error='unexpected ack_game_joined',
+                err_msg_id=msg_id,
             )
             await ctx.redis_store.delete_session(conn_id)
             return
@@ -396,14 +393,11 @@ class OnClientMessage(HandlerSet[wire.ClientMsgType]):
             log.msg('connection cleared from game')
 
             # FIXME: shouldn't happen?
-            await ctx.ws_manager.send_fatal(
+            await ctx.send_fatal(
                 conn_id,
-                wire.ServerMessage.build(
-                    wire.ServerMsgType.ILLEGAL_MSG,
-                    msg_id=0,  # FIXME
-                    error='game cleared',
-                    err_msg_id=msg_id,
-                ),
+                wire.ServerMsgType.ILLEGAL_MSG,
+                error='game cleared',
+                err_msg_id=msg_id,
             )
             await ctx.redis_store.delete_session(conn_id)
             return
@@ -445,14 +439,11 @@ class OnClientMessage(HandlerSet[wire.ClientMsgType]):
         if session_state != SessionState.NEED_JOIN:
             log.msg('unexpected session state', session_state=session_state.value)
 
-            await ctx.ws_manager.send_fatal(
+            await ctx.send_fatal(
                 conn_id,
-                wire.ServerMessage.build(
-                    wire.ServerMsgType.ILLEGAL_MSG,
-                    msg_id=0,  # TODO
-                    error='session is not awaiting join',
-                    err_msg_id=msg_id,
-                ),
+                wire.ServerMsgType.ILLEGAL_MSG,
+                error='session is not awaiting join',
+                err_msg_id=msg_id,
             )
             return
 
@@ -467,14 +458,11 @@ class OnClientMessage(HandlerSet[wire.ClientMsgType]):
             _, game = await ctx.redis_store.read_game(game_id_bytes)
 
             try:
-                await ctx.ws_manager.send(
+                await ctx.send(
                     conn_id,
-                    wire.ServerMessage.build(
-                        wire.ServerMsgType.MOVE_PENDING,
-                        msg_id=0,  # TODO
-                        player=game.player,
-                        last_move=meta.get_last_move_json(),
-                    ),
+                    wire.ServerMsgType.MOVE_PENDING,
+                    player=game.player,
+                    last_move=meta.get_last_move_json(),
                 )
             except WebsocketConnectionLost:
                 log.msg('connection lost')
@@ -504,14 +492,8 @@ class OnClientMessage(HandlerSet[wire.ClientMsgType]):
 
         if session_state != SessionState.RUNNING:
             # TODO: disconnect
-            await ctx.ws_manager.send_fatal(
-                conn_id,
-                wire.ServerMessage.build(
-                    wire.ServerMsgType.ILLEGAL_MSG,
-                    msg_id=0,  # FIXME
-                    error='',
-                    err_msg_id=msg_id,
-                ),
+            await ctx.send_fatal(
+                conn_id, wire.ServerMsgType.ILLEGAL_MSG, error='', err_msg_id=msg_id
             )
             return
 
@@ -535,13 +517,8 @@ class OnClientMessage(HandlerSet[wire.ClientMsgType]):
             game.apply_move(move)
 
         except IllegalMoveException as exc:
-            await ctx.ws_manager.send_fatal(
-                conn_id,
-                wire.ServerMessage.build(
-                    wire.ServerMsgType.ILLEGAL_MOVE,
-                    msg_id=0,  # FIXME(msg_id)
-                    error=str(exc),
-                ),
+            await ctx.send_fatal(
+                conn_id, wire.ServerMsgType.ILLEGAL_MOVE, error=str(exc)
             )
 
             # TODO: update game state
@@ -636,8 +613,7 @@ async def broadcast_game_state(ctx: ServerCtx, meta: GameMeta, game: GameModel) 
             continue
 
         # FIXME: close handling
-        msg = wire.ServerMessage.build(msg_type, msg_id=0, **payload)  # TODO(msg-id)
-        tasks.append(ctx.ws_manager.send(conn_id, msg))
+        tasks.append(ctx.send(conn_id, msg_type, **payload))
 
     await asyncio.gather(*tasks)
 
