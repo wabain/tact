@@ -180,7 +180,7 @@ async def new_message(ctx: ServerCtx, conn_id: str, msg_src: str) -> None:
 
     log = log.bind(msg_id=msg_id, msg_type=msg_type.value)
 
-    log.msg('new message')
+    log.msg('new message', payload=payload)
 
     # Filling in the generic type via inheritance in OnClientMessage doesn't
     # seem to be working - https://github.com/python/mypy/issues/1337 ?
