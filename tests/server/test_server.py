@@ -313,6 +313,7 @@ class MockRedisStore(AbstractRedisStore):
         # Force functions with return values to be handled on a case-by-case basis
         self.mock.put_game = MagicMock(side_effect=NotImplementedError)
         self.mock.read_session = MagicMock(side_effect=NotImplementedError)
+        self.mock.next_msg_id = Mock(return_value=0)
         self.mock.read_game = MagicMock(side_effect=NotImplementedError)
         self.mock.read_game_meta = MagicMock(side_effect=NotImplementedError)
 
@@ -326,6 +327,9 @@ class MockRedisStore(AbstractRedisStore):
 
     async def delete_session(self, conn_id: str) -> None:
         return self.mock.delete_session(conn_id)
+
+    async def next_msg_id(self, conn_id: str) -> int:
+        return self.mock.next_msg_id(conn_id)
 
     async def put_game(self, game: GameModel, meta: GameMeta) -> uuid.UUID:
         return self.mock.put_game(game, meta)

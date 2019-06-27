@@ -127,9 +127,10 @@ class ServerCtx:  # pylint: disable=too-few-public-methods
         self.ws_manager = ws_manager
 
     async def send(self, conn_id: str, msg_type: wire.ServerMsgType, **payload: Any):
+        next_msg_id = await self.redis_store.next_msg_id(conn_id)
+
         await self.ws_manager.send(
-            conn_id,
-            wire.ServerMessage.build(msg_type, msg_id=0, **payload),  # TODO(msg-id)
+            conn_id, wire.ServerMessage.build(msg_type, msg_id=next_msg_id, **payload)
         )
 
     async def send_fatal(
@@ -639,6 +640,11 @@ class AbstractRedisStore(ABC):
     @abstractmethod
     async def delete_session(self, conn_id: str) -> None:
         """Delete a session from Redis"""
+        raise NotImplementedError
+
+    @abstractmethod
+    async def next_msg_id(self, conn_id: str) -> int:
+        """Allocate a new message ID to be sent over the connection"""
         raise NotImplementedError
 
     @abstractmethod

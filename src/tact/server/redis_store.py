@@ -74,6 +74,24 @@ class RedisStore(AbstractRedisStore):
         redis = await self.get_pool()
         await redis.delete(_conn_id_to_redis_key(conn_id))
 
+    async def next_msg_id(self, conn_id: str) -> int:
+        """Get the next message ID for the session from Redis"""
+        redis = await self.get_pool()
+
+        # TODO: Optimize with evalsha
+        msg_id = await redis.eval(
+            '''
+            if redis.call('exists', KEYS[1]) == 1 then
+                return redis.call('hincrby', KEYS[1], 'msg_id', 1)
+            else
+                return 0
+            end
+            ''',
+            keys=[_conn_id_to_redis_key(conn_id)],
+        )
+
+        return int(msg_id)
+
     async def put_game(self, game: GameModel, meta: GameMeta) -> uuid.UUID:
         """Write a new game into Redis, returning the key"""
         redis = await self.get_pool()

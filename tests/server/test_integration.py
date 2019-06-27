@@ -233,7 +233,7 @@ async def test_simple_game(store: RedisStore):  # pylint: disable=redefined-oute
         ctx, wire.ClientMsgType.NEW_GAME, player=1, squares_per_row=3, run_to_win=3
     )
 
-    _, _, payload = await client1.assert_recv(wire.ServerMsgType.GAME_JOINED, msg_id=0)
+    _, _, payload = await client1.assert_recv(wire.ServerMsgType.GAME_JOINED)
 
     assert payload['player'] == 1
     assert payload['squares_per_row'] == 3
@@ -243,7 +243,7 @@ async def test_simple_game(store: RedisStore):  # pylint: disable=redefined-oute
 
     await client2.send(ctx, wire.ClientMsgType.JOIN_GAME, game_id=game_id, player=2)
 
-    _, _, payload = await client2.assert_recv(wire.ServerMsgType.GAME_JOINED, msg_id=0)
+    _, _, payload = await client2.assert_recv(wire.ServerMsgType.GAME_JOINED)
 
     assert payload['player'] == 2
     assert payload['squares_per_row'] == 3
@@ -254,7 +254,8 @@ async def test_simple_game(store: RedisStore):  # pylint: disable=redefined-oute
 
     for client in [client1, client2]:
         await client.assert_recv(
-            wire.ServerMsgType.MOVE_PENDING, 0, {'player': 1, 'last_move': None}
+            msg_type=wire.ServerMsgType.MOVE_PENDING,
+            payload={'player': 1, 'last_move': None},
         )
 
     moves = [
@@ -302,7 +303,8 @@ async def test_simple_game(store: RedisStore):  # pylint: disable=redefined-oute
 class InMemoryWSClient:
     def __init__(self, conn_id: str):
         self.conn_id = conn_id
-        self.msg_id = 0
+        self.msg_id = 1
+        self.last_server_msg_id = 0
         self.closed = False
         self._inbound = asyncio.Queue()
 
@@ -355,9 +357,16 @@ class InMemoryWSClient:
 
     async def assert_recv(self, msg_type, msg_id=None, payload=None):
         act_msg_type, act_msg_id, act_payload = await self.recv()
+
         assert act_msg_type == msg_type
-        if msg_id is not None:
-            assert act_msg_id == msg_id
+
+        if msg_id is None:
+            msg_id = self.last_server_msg_id + 1
+
+        self.last_server_msg_id = act_msg_id
+
+        assert act_msg_id == msg_id
+
         if payload is not None:
             assert act_payload == payload
         return act_msg_type, act_msg_id, act_payload
