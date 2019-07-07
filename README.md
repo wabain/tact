@@ -22,6 +22,9 @@ $ python setup.py develop
 # Test dependencies must be installed in the development environment to allow
 # linting test code.
 $ pip install tact[develop,testing]
+
+# A redis server must be running for the integration tests
+$ docker-compose up -d redis
 ```
 
 Run `scripts/precommit.py` to check your commit prior to merging.
